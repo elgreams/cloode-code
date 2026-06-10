@@ -19,6 +19,7 @@ import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import type { Tools } from '../Tool.js'
 import type { Command } from '../types/command.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
+import { getShellGuidanceSection, getShellInfoLine } from './shellGuidance.js'
 import {
   getCanonicalName,
   getMarketingNameForModel,
@@ -637,6 +638,8 @@ export async function computeEnvInfo(
     ? `\n\nAssistant knowledge cutoff is ${cutoff}.`
     : ''
 
+  const shellGuidance = getShellGuidanceSection()
+
   return `Here is useful information about the environment you are running in:
 <env>
 Working directory: ${getCwd()}
@@ -645,7 +648,7 @@ ${additionalDirsInfo}Platform: ${env.platform}
 ${getShellInfoLine()}
 OS Version: ${unameSR}
 </env>
-${modelDescription}${knowledgeCutoffMessage}`
+${shellGuidance ? `${shellGuidance}\n` : ''}${modelDescription}${knowledgeCutoffMessage}`
 }
 
 export async function computeSimpleEnvInfo(
@@ -689,6 +692,7 @@ export async function computeSimpleEnvInfo(
     `Platform: ${env.platform}`,
     getShellInfoLine(),
     `OS Version: ${unameSR}`,
+    getShellGuidanceSection(),
     modelDescription,
     knowledgeCutoffMessage,
     process.env.USER_TYPE === 'ant' && isUndercover()
@@ -727,19 +731,6 @@ function getKnowledgeCutoff(modelId: string): string | null {
     return 'January 2025'
   }
   return null
-}
-
-function getShellInfoLine(): string {
-  const shell = process.env.SHELL || 'unknown'
-  const shellName = shell.includes('zsh')
-    ? 'zsh'
-    : shell.includes('bash')
-      ? 'bash'
-      : shell
-  if (env.platform === 'win32') {
-    return `Shell: ${shellName} (use Unix shell syntax, not Windows — e.g., /dev/null not NUL, forward slashes in paths)`
-  }
-  return `Shell: ${shellName}`
 }
 
 export function getUnameSR(): string {
