@@ -36,6 +36,19 @@ const CHROME_EXTENSION_RECONNECT_URL = 'https://clau.de/chrome/reconnect'
 const NATIVE_HOST_IDENTIFIER = 'com.anthropic.claude_code_browser_extension'
 const NATIVE_HOST_MANIFEST_NAME = `${NATIVE_HOST_IDENTIFIER}.json`
 
+function shouldUseStandaloneExecutableForChromeHost(): boolean {
+  if (isInBundledMode()) {
+    return true
+  }
+
+  if (getPlatform() !== 'windows') {
+    return false
+  }
+
+  const modulePath = fileURLToPath(import.meta.url).replace(/\\/g, '/')
+  return modulePath.includes('/~BUN/root/')
+}
+
 export function shouldEnableClaudeInChrome(chromeFlag?: boolean): boolean {
   // Disable by default in non-interactive sessions (e.g., SDK, CI)
   if (getIsNonInteractiveSession() && chromeFlag !== true) {
@@ -93,7 +106,7 @@ export function setupClaudeInChrome(): {
   allowedTools: string[]
   systemPrompt: string
 } {
-  const isNativeBuild = isInBundledMode()
+  const isNativeBuild = shouldUseStandaloneExecutableForChromeHost()
   const allowedTools = getChromeBrowserTools().map(
     tool => `mcp__claude-in-chrome__${tool.name}`,
   )
