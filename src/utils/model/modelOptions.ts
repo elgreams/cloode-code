@@ -33,6 +33,7 @@ import {
 } from './model.js'
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import { CODEX_MODELS } from '../../services/api/codex-fetch-adapter.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -209,41 +210,17 @@ function getHaikuOption(): ModelOption {
     : getHaiku35Option()
 }
 
-// OpenAI Codex model options
-function getGpt55Option(): ModelOption {
-  return {
-    value: 'gpt-5.5',
-    label: 'GPT-5.5',
-    description: 'GPT-5.5 · Latest frontier model for complex agentic coding',
-    descriptionForModel: 'GPT-5.5 - latest frontier model for complex multi-step agentic coding',
-  }
-}
-
-function getGpt54Option(): ModelOption {
-  return {
-    value: 'gpt-5.4',
-    label: 'GPT-5.4',
-    description: 'GPT-5.4 · Advanced reasoning and code generation',
-    descriptionForModel: 'GPT-5.4 - advanced reasoning and code generation capabilities',
-  }
-}
-
-function getGpt53CodexOption(): ModelOption {
-  return {
-    value: 'gpt-5.3-codex',
-    label: 'GPT-5.3 Codex',
-    description: 'GPT-5.3 Codex · Optimized for code generation and understanding',
-    descriptionForModel: 'GPT-5.3 Codex - specialized for code generation and understanding',
-  }
-}
-
-function getGpt54MiniOption(): ModelOption {
-  return {
-    value: 'gpt-5.4-mini',
-    label: 'GPT-5.4 Mini',
-    description: 'GPT-5.4 Mini · Fast and efficient for simple tasks',
-    descriptionForModel: 'GPT-5.4 Mini - fast and efficient for simple coding tasks',
-  }
+// OpenAI Codex model options.
+// Derived from the CODEX_MODELS display seed so the menu can never drift from
+// the routing/adapter list. Live availability (remote discovery) layers on top
+// of this in a later commit; this is the offline/fallback set.
+function getStaticCodexModelOptions(): ModelOption[] {
+  return CODEX_MODELS.map(m => ({
+    value: m.id as ModelOption['value'],
+    label: m.label,
+    description: `${m.label} · ${m.description}`,
+    descriptionForModel: `${m.label} - ${m.description}`,
+  }))
 }
 
 function getMaxOpusOption(fastMode = false): ModelOption {
@@ -327,13 +304,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
   // Codex subscribers get OpenAI model options
   if (isCodexSubscriber()) {
-    return [
-      getDefaultOptionForUser(),
-      getGpt55Option(),
-      getGpt54Option(),
-      getGpt53CodexOption(),
-      getGpt54MiniOption(),
-    ]
+    return [getDefaultOptionForUser(), ...getStaticCodexModelOptions()]
   }
 
   if (isClaudeAISubscriber()) {

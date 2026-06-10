@@ -17,7 +17,12 @@
 
 import { getCodexOAuthTokens } from '../../utils/auth.js'
 
-// ── Available Codex models ──────────────────────────────────────────
+// ── Codex model display seed ─────────────────────────────────────────
+// NOTE: This list is ONLY a display/offline fallback seed for the `/model`
+// menu. It is NOT the routing authority — routing is decided by the pattern
+// in `isCodexModel()` below, and live availability comes from remote model
+// discovery (see roadmap Commit 5). A new model (e.g. gpt-5.7) routes and can
+// be selected without being added here.
 export const CODEX_MODELS = [
   { id: 'gpt-5.5', label: 'GPT-5.5', description: 'Latest frontier GPT' },
   { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', description: 'Frontier agentic coding model' },
@@ -46,12 +51,20 @@ export function mapClaudeModelToCodex(claudeModel: string | null): string {
 }
 
 /**
- * Checks if a given model string is a valid Codex model.
+ * Checks if a given model string routes to the Codex/OpenAI backend.
+ *
+ * Pattern-based on purpose: any `gpt-*` or `*codex*` model id routes to Codex,
+ * including models released after this build. The request backend is the source
+ * of truth for whether a specific id is actually usable (it 400s otherwise);
+ * this function must NOT gatekeep on the static CODEX_MODELS seed, or new models
+ * would require a recompile to route.
+ *
  * @param model - The model string to check
- * @returns True if the model is a Codex model, false otherwise
+ * @returns True if the model should route to Codex, false otherwise
  */
 export function isCodexModel(model: string): boolean {
-  return CODEX_MODELS.some(m => m.id === model)
+  if (!model) return false
+  return /^gpt-/i.test(model) || /codex/i.test(model)
 }
 
 // ── JWT helpers ─────────────────────────────────────────────────────
