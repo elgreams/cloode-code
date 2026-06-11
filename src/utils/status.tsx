@@ -3,7 +3,8 @@ import figures from 'figures';
 import * as React from 'react';
 import { color, Text } from '../ink.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
-import { getAccountInformation, isClaudeAISubscriber } from './auth.js';
+import { getAccountInformation, hasCodexAuth, isClaudeAISubscriber } from './auth.js';
+import { getLastServedCodexModel } from '../services/api/codex-fetch-adapter.js';
 import { getLargeMemoryFiles, getMemoryFiles, MAX_MEMORY_CHARACTER_COUNT } from './claudemd.js';
 import { getDoctorDiagnostic } from './doctorDiagnostic.js';
 import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js';
@@ -320,6 +321,17 @@ export function buildAPIProviderProperties(): Property[] {
         value: 'Microsoft Foundry auth skipped'
       });
     }
+  }
+  // Codex/ChatGPT: surface auth presence and the model the backend actually
+  // reported serving (authoritative, unlike asking the model its name).
+  if (hasCodexAuth()) {
+    const servedModel = getLastServedCodexModel();
+    properties.push({
+      label: 'ChatGPT/Codex',
+      value: servedModel
+        ? `served model: ${servedModel}`
+        : 'authenticated (send a GPT message to detect served model)'
+    });
   }
   const proxyUrl = getProxyUrl();
   if (proxyUrl) {

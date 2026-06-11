@@ -246,6 +246,10 @@ export type GlobalConfig = {
     models: string[]
     fetchedAt: number
   }
+  // Model ids the Codex backend rejected as "not supported" for this account.
+  // Learned from real 400 responses and excluded from the /model menu, so the
+  // list self-heals even when remote discovery is unavailable.
+  codexUnsupportedModels?: string[]
   iterm2KeyBindingInstalled?: boolean // Legacy - keeping for backward compatibility
   editorMode?: EditorMode
   bypassPermissionsModeAccepted?: boolean

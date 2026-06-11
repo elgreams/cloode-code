@@ -21,9 +21,12 @@ const CODEX_MODELS_TTL_MS = 24 * 60 * 60 * 1000 // 24h
  * from the Codex backend; falls back to the static seed when no cache exists.
  */
 export function getResolvedCodexModelIds(): string[] {
-  const cached = getGlobalConfig().codexAvailableModels
-  if (cached?.models?.length) return cached.models
-  return CODEX_MODELS.map(m => m.id)
+  const config = getGlobalConfig()
+  const unsupported = new Set(config.codexUnsupportedModels ?? [])
+  const base = config.codexAvailableModels?.models?.length
+    ? config.codexAvailableModels.models
+    : CODEX_MODELS.map(m => m.id)
+  return base.filter(id => !unsupported.has(id))
 }
 
 let refreshInFlight = false

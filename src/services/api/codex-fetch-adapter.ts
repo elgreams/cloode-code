@@ -16,6 +16,8 @@
  */
 
 import { getCodexOAuthTokens } from '../../utils/auth.js'
+import { logForDebugging } from '../../utils/debug.js'
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 
 // ── Codex model display seed ─────────────────────────────────────────
 // NOTE: This list is ONLY a display/offline fallback seed for the `/model`
@@ -34,6 +36,32 @@ export const CODEX_MODELS = [
 ] as const
 
 export const DEFAULT_CODEX_MODEL = 'gpt-5.2-codex'
+
+// The model id the Codex backend reported actually serving the last response.
+// This is authoritative (unlike asking the model what it is) and is surfaced in
+// /status. Null until the first Codex response of the session completes.
+let lastServedCodexModel: string | null = null
+export function getLastServedCodexModel(): string | null {
+  return lastServedCodexModel
+}
+
+/**
+ * Persist a model id the backend rejected as unsupported for this account, so
+ * the /model menu can exclude it. Writes config directly (rather than importing
+ * the model helpers) to avoid an import cycle with codexModels.ts.
+ */
+function recordUnsupportedCodexModel(model: string): void {
+  if (!model) return
+  const existing = getGlobalConfig().codexUnsupportedModels ?? []
+  if (existing.includes(model)) return
+  logForDebugging(`Codex model '${model}' rejected as unsupported; hiding from /model`)
+  saveGlobalConfig(config => {
+    const current = config.codexUnsupportedModels ?? []
+    return current.includes(model)
+      ? config
+      : { ...config, codexUnsupportedModels: [...current, model] }
+  })
+}
 
 /**
  * Maps Claude model names to corresponding Codex model names.
@@ -581,6 +609,9 @@ async function translateCodexStreamToAnthropic(
             // Response completed — extract usage
             else if (eventType === 'response.completed') {
               const response = event.response as Record<string, unknown>
+              if (typeof response?.model === 'string') {
+                lastServedCodexModel = response.model
+              }
               const usage = response?.usage as Record<string, number> | undefined
               if (usage) {
                 outputTokens = usage.output_tokens || outputTokens
@@ -762,12 +793,16 @@ const CODEX_MODELS_URL = 'https://chatgpt.com/backend-api/codex/models'
  */
 export async function fetchCodexModels(): Promise<string[] | null> {
   const tokens = getCodexOAuthTokens()
-  if (!tokens?.accessToken) return null
+  if (!tokens?.accessToken) {
+    logForDebugging('fetchCodexModels: no Codex access token')
+    return null
+  }
   let accountId = tokens.accountId
   if (!accountId) {
     try {
       accountId = extractAccountId(tokens.accessToken)
     } catch {
+      logForDebugging('fetchCodexModels: could not resolve account id')
       return null
     }
   }
@@ -781,9 +816,29 @@ export async function fetchCodexModels(): Promise<string[] | null> {
         'OpenAI-Beta': 'responses=experimental',
       },
     })
-    if (!res.ok) return null
-    return parseCodexModelsResponse(await res.json())
-  } catch {
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      logForDebugging(
+        `fetchCodexModels: ${CODEX_MODELS_URL} -> HTTP ${res.status} ${res.statusText}; body: ${body.slice(0, 500)}`,
+      )
+      return null
+    }
+    const raw = await res.text()
+    logForDebugging(`fetchCodexModels: raw response: ${raw.slice(0, 1000)}`)
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch {
+      logForDebugging('fetchCodexModels: response was not valid JSON')
+      return null
+    }
+    const ids = parseCodexModelsResponse(json)
+    if (!ids) {
+      logForDebugging('fetchCodexModels: could not extract model ids from response')
+    }
+    return ids
+  } catch (err) {
+    logForDebugging(`fetchCodexModels: request threw: ${String(err)}`)
     return null
   }
 }
@@ -863,6 +918,14 @@ export function createCodexFetch(
 
     if (!codexResponse.ok) {
       const errorText = await codexResponse.text()
+      // Self-heal: if the backend says this model isn't supported for the
+      // account, remember it so the /model menu stops offering it.
+      if (
+        codexResponse.status === 400 &&
+        /not supported|does not support|unsupported|not available/i.test(errorText)
+      ) {
+        recordUnsupportedCodexModel(codexModel)
+      }
       const errorBody = {
         type: 'error',
         error: {
