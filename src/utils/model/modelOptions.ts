@@ -3,6 +3,7 @@ import { getInitialMainLoopModel } from '../../bootstrap/state.js'
 import {
   isClaudeAISubscriber,
   isCodexSubscriber,
+  hasCodexAuth,
   isMaxSubscriber,
   isTeamPremiumSubscriber,
 } from '../auth.js'
@@ -218,8 +219,8 @@ function getStaticCodexModelOptions(): ModelOption[] {
   return CODEX_MODELS.map(m => ({
     value: m.id as ModelOption['value'],
     label: m.label,
-    description: `${m.label} · ${m.description}`,
-    descriptionForModel: `${m.label} - ${m.description}`,
+    description: `ChatGPT/Codex · ${m.description}`,
+    descriptionForModel: `${m.label} (ChatGPT/Codex) - ${m.description}`,
   }))
 }
 
@@ -302,11 +303,28 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     ]
   }
 
-  // Codex subscribers get OpenAI model options
+  // Active OpenAI provider (CLAUDE_CODE_USE_OPENAI=1): Codex-only menu. Routing
+  // is env-based until Commit 4, so we must not show Claude options here — they
+  // would mis-route through the Codex adapter.
   if (isCodexSubscriber()) {
     return [getDefaultOptionForUser(), ...getStaticCodexModelOptions()]
   }
 
+  const options = getClaudeModelOptions(fastMode)
+
+  // Both-auth: Codex tokens exist but we're not in active OpenAI mode. Append
+  // GPT/Codex models so they're visible/selectable from the same menu.
+  // (Selecting one still needs CLAUDE_CODE_USE_OPENAI=1 to route until Commit 4.)
+  if (hasCodexAuth()) {
+    options.push(...getStaticCodexModelOptions())
+  }
+
+  return options
+}
+
+// Claude model options for the current user tier (Claude.ai subscriber, PAYG
+// 1P, or PAYG 3P). Codex/GPT options are layered on top by the caller.
+function getClaudeModelOptions(fastMode = false): ModelOption[] {
   if (isClaudeAISubscriber()) {
     if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
       // Max and Team Premium users: Opus is default, show Sonnet as alternative
