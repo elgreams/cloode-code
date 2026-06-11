@@ -843,8 +843,12 @@ export async function fetchCodexModels(): Promise<string[] | null> {
       return null
     }
     const ids = parseCodexModelsResponse(json)
-    if (!ids) {
-      logForDebugging('fetchCodexModels: could not extract model ids from response')
+    if (ids === null) {
+      logForDebugging('fetchCodexModels: unrecognized response shape')
+    } else if (ids.length === 0) {
+      logForDebugging(
+        'fetchCodexModels: account has no dedicated codex models (expected for ChatGPT accounts); using documented seed',
+      )
     }
     return ids
   } catch (err) {
@@ -862,6 +866,8 @@ function parseCodexModelsResponse(data: unknown): string[] | null {
       : Array.isArray(d?.models)
         ? (d.models as unknown[])
         : null
+  // null = unrecognized shape; [] = recognized but empty (normal for ChatGPT
+  // accounts, which have no dedicated codex models). Callers distinguish these.
   if (!arr) return null
   const ids = arr
     .map(m => {
@@ -870,7 +876,7 @@ function parseCodexModelsResponse(data: unknown): string[] | null {
       return (o?.id ?? o?.slug ?? o?.model) as unknown
     })
     .filter((x): x is string => typeof x === 'string' && x.length > 0)
-  return ids.length ? Array.from(new Set(ids)) : null
+  return Array.from(new Set(ids))
 }
 
 /**
@@ -910,7 +916,22 @@ export function createCodexFetch(
     const currentToken = tokens?.accessToken || accessToken
 
     // Translate to Codex format
-    const { codexBody, codexModel } = translateToCodexBody(anthropicBody)
+    let { codexBody, codexModel } = translateToCodexBody(anthropicBody)
+
+    // Graceful recovery: if the selected model was previously learned to be
+    // unsupported for this account (e.g. a stale saved default that's since been
+    // removed), fall back to the default model instead of 400ing again.
+    const blocked = getGlobalConfig().codexUnsupportedModels ?? []
+    if (
+      blocked.includes(codexModel) &&
+      !blocked.includes(DEFAULT_CODEX_MODEL)
+    ) {
+      logForDebugging(
+        `Codex model '${codexModel}' is known-unsupported; falling back to '${DEFAULT_CODEX_MODEL}'`,
+      )
+      codexModel = DEFAULT_CODEX_MODEL
+      codexBody = { ...codexBody, model: DEFAULT_CODEX_MODEL }
+    }
 
     // Call Codex API
     const codexResponse = await globalThis.fetch(CODEX_BASE_URL, {
