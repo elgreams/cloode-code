@@ -35,6 +35,7 @@ import {
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
 import { CODEX_MODELS } from '../../services/api/codex-fetch-adapter.js'
+import { getResolvedCodexModelIds } from './codexModels.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -212,16 +213,31 @@ function getHaikuOption(): ModelOption {
 }
 
 // OpenAI Codex model options.
-// Derived from the CODEX_MODELS display seed so the menu can never drift from
-// the routing/adapter list. Live availability (remote discovery) layers on top
-// of this in a later commit; this is the offline/fallback set.
-function getStaticCodexModelOptions(): ModelOption[] {
-  return CODEX_MODELS.map(m => ({
-    value: m.id as ModelOption['value'],
-    label: m.label,
-    description: `ChatGPT/Codex · ${m.description}`,
-    descriptionForModel: `${m.label} (ChatGPT/Codex) - ${m.description}`,
-  }))
+// Built from the resolved id list (cached account models when available, else
+// the static CODEX_MODELS seed). Labels/descriptions come from the seed when the
+// id is known, otherwise they're derived from the id so account-specific or
+// newer models still render cleanly.
+function codexLabelFor(id: string): { label: string; description: string } {
+  const known = CODEX_MODELS.find(m => m.id === id)
+  if (known) return { label: known.label, description: known.description }
+  const label = id
+    .replace(/^gpt-/i, 'GPT-')
+    .replace(/-codex/i, ' Codex')
+    .replace(/-mini/i, ' Mini')
+    .replace(/-max/i, ' Max')
+  return { label, description: 'ChatGPT/Codex model' }
+}
+
+function getCodexModelOptions(): ModelOption[] {
+  return getResolvedCodexModelIds().map(id => {
+    const { label, description } = codexLabelFor(id)
+    return {
+      value: id as ModelOption['value'],
+      label,
+      description: `ChatGPT/Codex · ${description}`,
+      descriptionForModel: `${label} (ChatGPT/Codex) - ${description}`,
+    }
+  })
 }
 
 function getMaxOpusOption(fastMode = false): ModelOption {
@@ -307,7 +323,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   // is env-based until Commit 4, so we must not show Claude options here — they
   // would mis-route through the Codex adapter.
   if (isCodexSubscriber()) {
-    return [getDefaultOptionForUser(), ...getStaticCodexModelOptions()]
+    return [getDefaultOptionForUser(), ...getCodexModelOptions()]
   }
 
   const options = getClaudeModelOptions(fastMode)
@@ -317,7 +333,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   // Selecting one now routes to Codex per-model (no env var needed) — see the
   // model-based routing in services/api/client.ts.
   if (hasCodexAuth()) {
-    options.push(...getStaticCodexModelOptions())
+    options.push(...getCodexModelOptions())
   }
 
   return options

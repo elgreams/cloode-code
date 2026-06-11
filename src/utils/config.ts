@@ -239,6 +239,13 @@ export type GlobalConfig = {
     expiresAt: number
     accountId: string
   }
+  // Cache of GPT/Codex model ids the current ChatGPT account can actually use,
+  // fetched from the Codex backend. Drives the /model menu so it only offers
+  // models the account supports. Falls back to the static seed when absent.
+  codexAvailableModels?: {
+    models: string[]
+    fetchedAt: number
+  }
   iterm2KeyBindingInstalled?: boolean // Legacy - keeping for backward compatibility
   editorMode?: EditorMode
   bypassPermissionsModeAccepted?: boolean

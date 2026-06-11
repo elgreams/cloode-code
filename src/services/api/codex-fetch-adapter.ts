@@ -751,6 +751,62 @@ async function translateCodexStreamToAnthropic(
 // ── Main fetch interceptor ──────────────────────────────────────────
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex/responses'
+const CODEX_MODELS_URL = 'https://chatgpt.com/backend-api/codex/models'
+
+/**
+ * Fetches the list of model ids the current ChatGPT account can use from the
+ * Codex backend. Returns null on any failure (no tokens, network error, non-OK
+ * response, or unrecognized shape) so callers can fall back to the cache/seed.
+ * Tolerates several response shapes (`[...]`, `{data:[...]}`, `{models:[...]}`)
+ * with string entries or objects carrying `id`/`slug`/`model`.
+ */
+export async function fetchCodexModels(): Promise<string[] | null> {
+  const tokens = getCodexOAuthTokens()
+  if (!tokens?.accessToken) return null
+  let accountId = tokens.accountId
+  if (!accountId) {
+    try {
+      accountId = extractAccountId(tokens.accessToken)
+    } catch {
+      return null
+    }
+  }
+  try {
+    const res = await globalThis.fetch(CODEX_MODELS_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${tokens.accessToken}`,
+        'chatgpt-account-id': accountId,
+        originator: 'pi',
+        'OpenAI-Beta': 'responses=experimental',
+      },
+    })
+    if (!res.ok) return null
+    return parseCodexModelsResponse(await res.json())
+  } catch {
+    return null
+  }
+}
+
+function parseCodexModelsResponse(data: unknown): string[] | null {
+  const d = data as Record<string, unknown>
+  const arr: unknown[] | null = Array.isArray(data)
+    ? data
+    : Array.isArray(d?.data)
+      ? (d.data as unknown[])
+      : Array.isArray(d?.models)
+        ? (d.models as unknown[])
+        : null
+  if (!arr) return null
+  const ids = arr
+    .map(m => {
+      if (typeof m === 'string') return m
+      const o = m as Record<string, unknown>
+      return (o?.id ?? o?.slug ?? o?.model) as unknown
+    })
+    .filter((x): x is string => typeof x === 'string' && x.length > 0)
+  return ids.length ? Array.from(new Set(ids)) : null
+}
 
 /**
  * Creates a fetch function that intercepts Anthropic API calls and routes them to Codex.
