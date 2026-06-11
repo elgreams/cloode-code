@@ -10,6 +10,8 @@ import {
 import { getModelStrings } from './modelStrings.js'
 import {
   COST_TIER_3_15,
+  COST_TIER_5_25,
+  COST_TIER_10_50,
   COST_HAIKU_35,
   COST_HAIKU_45,
   formatModelPricing,
@@ -164,6 +166,78 @@ export function getOpus46_1MOption(fastMode = false): ModelOption {
     descriptionForModel:
       'Opus 4.6 with 1M context window - for long sessions with large codebases',
   }
+}
+
+// Newest frontier models (above the default Opus 4.6). Selectable but not the
+// default. Values are full model ids so they route exactly as selected.
+function getFable5Option(): ModelOption {
+  return {
+    value: getModelStrings().fable5,
+    label: 'Fable 5',
+    description: `Fable 5 · Most powerful & intelligent · ${formatModelPricing(COST_TIER_10_50)}`,
+    descriptionForModel:
+      'Fable 5 - most powerful and intelligent model, a tier above Opus',
+  }
+}
+
+function getFable5_1MOption(): ModelOption {
+  return {
+    value: getModelStrings().fable5 + '[1m]',
+    label: 'Fable 5 (1M context)',
+    description: `Fable 5 for long sessions · ${formatModelPricing(COST_TIER_10_50)}`,
+    descriptionForModel: 'Fable 5 with 1M context window',
+  }
+}
+
+function getOpus48Option(): ModelOption {
+  return {
+    value: getModelStrings().opus48,
+    label: 'Opus 4.8',
+    description: `Opus 4.8 · Most capable Opus · ${formatModelPricing(COST_TIER_5_25)}`,
+    descriptionForModel:
+      'Opus 4.8 - most capable Opus, state-of-the-art long-horizon agentic work',
+  }
+}
+
+function getOpus48_1MOption(): ModelOption {
+  return {
+    value: getModelStrings().opus48 + '[1m]',
+    label: 'Opus 4.8 (1M context)',
+    description: `Opus 4.8 for long sessions · ${formatModelPricing(COST_TIER_5_25)}`,
+    descriptionForModel: 'Opus 4.8 with 1M context window',
+  }
+}
+
+function getOpus47Option(): ModelOption {
+  return {
+    value: getModelStrings().opus47,
+    label: 'Opus 4.7',
+    description: `Opus 4.7 · Previous-generation Opus · ${formatModelPricing(COST_TIER_5_25)}`,
+    descriptionForModel: 'Opus 4.7 - previous-generation frontier Opus',
+  }
+}
+
+function getOpus47_1MOption(): ModelOption {
+  return {
+    value: getModelStrings().opus47 + '[1m]',
+    label: 'Opus 4.7 (1M context)',
+    description: `Opus 4.7 for long sessions · ${formatModelPricing(COST_TIER_5_25)}`,
+    descriptionForModel: 'Opus 4.7 with 1M context window',
+  }
+}
+
+// The newest frontier models, appended to first-party menus so everything the
+// account can use is visible. Default stays Opus 4.6.
+function getFrontierModelOptions(): ModelOption[] {
+  const opts: ModelOption[] = []
+  const has1m = checkOpus1mAccess()
+  opts.push(getFable5Option())
+  if (has1m) opts.push(getFable5_1MOption())
+  opts.push(getOpus48Option())
+  if (has1m) opts.push(getOpus48_1MOption())
+  opts.push(getOpus47Option())
+  if (has1m) opts.push(getOpus47_1MOption())
+  return opts
 }
 
 function getCustomHaikuOption(): ModelOption | undefined {
@@ -327,6 +401,14 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   }
 
   const options = getClaudeModelOptions(fastMode)
+
+  // Surface the newest frontier Claude models (Fable 5, Opus 4.8/4.7) on
+  // first-party menus so everything the account can use is visible. Gated to
+  // firstParty since 3P providers (Bedrock/Vertex) may not serve them yet.
+  // Default stays Opus 4.6.
+  if (getAPIProvider() === 'firstParty') {
+    options.push(...getFrontierModelOptions())
+  }
 
   // Both-auth: Codex tokens exist but we're not in active OpenAI mode. Append
   // GPT/Codex models so they're visible/selectable from the same menu.

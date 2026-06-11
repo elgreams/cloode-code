@@ -116,8 +116,16 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
     return supported3P
   }
   const canonical = getCanonicalName(model)
-  // Supported by a subset of Claude 4 models
-  if (canonical.includes('opus-4-6') || canonical.includes('sonnet-4-6')) {
+  // Supported by a subset of Claude 4 models. Opus 4.7/4.8 and Fable 5 are
+  // adaptive-thinking-only (budget_tokens 400s), so they MUST be allowlisted
+  // here or requests fail.
+  if (
+    canonical.includes('opus-4-6') ||
+    canonical.includes('opus-4-7') ||
+    canonical.includes('opus-4-8') ||
+    canonical.includes('sonnet-4-6') ||
+    canonical.includes('fable')
+  ) {
     return true
   }
   // Exclude any other known legacy models (allowlist above catches 4-6 variants first)
