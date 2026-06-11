@@ -25,17 +25,20 @@ import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 // in `isCodexModel()` below, and live availability comes from remote model
 // discovery (see roadmap Commit 5). A new model (e.g. gpt-5.7) routes and can
 // be selected without being added here.
+// Models OpenAI documents as available for ChatGPT-account (Plus/Pro/Business)
+// Codex sign-in. The dedicated `-codex` variants and gpt-5.2/gpt-5.3-codex are
+// API-key only / deprecated for ChatGPT accounts and will 400 ("not supported
+// when using Codex with a ChatGPT account"), so they are intentionally absent.
+// Ref: https://developers.openai.com/codex/models
+// (gpt-5.3-codex-spark is ChatGPT-Pro-only/research-preview; omitted from the
+//  default seed to avoid a 400 for non-Pro accounts — self-heal handles drift.)
 export const CODEX_MODELS = [
-  { id: 'gpt-5.5', label: 'GPT-5.5', description: 'Latest frontier GPT' },
-  { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', description: 'Frontier agentic coding model' },
-  { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex', description: 'Codex coding model' },
-  { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini', description: 'Fast Codex model' },
-  { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', description: 'Max Codex model' },
-  { id: 'gpt-5.4', label: 'GPT-5.4', description: 'Latest GPT' },
-  { id: 'gpt-5.2', label: 'GPT-5.2', description: 'GPT-5.2' },
+  { id: 'gpt-5.5', label: 'GPT-5.5', description: 'Newest frontier model for complex coding' },
+  { id: 'gpt-5.4', label: 'GPT-5.4', description: 'Flagship model for professional work' },
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', description: 'Fast, efficient model for lighter tasks' },
 ] as const
 
-export const DEFAULT_CODEX_MODEL = 'gpt-5.2-codex'
+export const DEFAULT_CODEX_MODEL = 'gpt-5.5'
 
 // The model id the Codex backend reported actually serving the last response.
 // This is authoritative (unlike asking the model what it is) and is surfaced in
@@ -72,9 +75,10 @@ export function mapClaudeModelToCodex(claudeModel: string | null): string {
   if (!claudeModel) return DEFAULT_CODEX_MODEL
   if (isCodexModel(claudeModel)) return claudeModel
   const lower = claudeModel.toLowerCase()
-  if (lower.includes('opus')) return 'gpt-5.1-codex-max'
-  if (lower.includes('haiku')) return 'gpt-5.1-codex-mini'
-  if (lower.includes('sonnet')) return 'gpt-5.2-codex'
+  // Map Claude capability tiers to current ChatGPT-account Codex models.
+  if (lower.includes('opus')) return 'gpt-5.5'
+  if (lower.includes('haiku')) return 'gpt-5.4-mini'
+  if (lower.includes('sonnet')) return 'gpt-5.4'
   return DEFAULT_CODEX_MODEL
 }
 
