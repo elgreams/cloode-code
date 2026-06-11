@@ -783,6 +783,11 @@ async function translateCodexStreamToAnthropic(
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex/responses'
 const CODEX_MODELS_URL = 'https://chatgpt.com/backend-api/codex/models'
+// The Codex models endpoint requires a client_version query param (the
+// /responses endpoint does not). The backend validates presence and uses it for
+// model entitlements, so keep this reasonably current. Bump if the backend
+// starts returning a stale/empty list.
+const CODEX_CLIENT_VERSION = '0.60.0'
 
 /**
  * Fetches the list of model ids the current ChatGPT account can use from the
@@ -807,7 +812,8 @@ export async function fetchCodexModels(): Promise<string[] | null> {
     }
   }
   try {
-    const res = await globalThis.fetch(CODEX_MODELS_URL, {
+    const modelsUrl = `${CODEX_MODELS_URL}?client_version=${encodeURIComponent(CODEX_CLIENT_VERSION)}`
+    const res = await globalThis.fetch(modelsUrl, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${tokens.accessToken}`,
