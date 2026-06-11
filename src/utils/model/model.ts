@@ -27,6 +27,7 @@ import { formatModelPricing, getOpus46CostTier } from '../modelCost.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider } from './providers.js'
+import { checkOpus1mAccess } from './check1mAccess.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
@@ -349,7 +350,11 @@ export function isOpus1mMergeEnabled(): boolean {
   if (
     is1mContextDisabled() ||
     isProSubscriber() ||
-    getAPIProvider() !== 'firstParty'
+    getAPIProvider() !== 'firstParty' ||
+    // Subscriber without 1M/extra-usage access: forcing opus[1m] makes every
+    // Opus request fail with a 429 "Usage credits are required for long context
+    // requests." Fall back to the standard-context default instead.
+    !checkOpus1mAccess()
   ) {
     return false
   }
