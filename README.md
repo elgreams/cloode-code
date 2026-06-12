@@ -48,6 +48,7 @@ Then run `free-code` and use the `/login` command to authenticate with your pref
 - [Build](#build)
 - [Usage](#usage)
 - [Browser Automation](#browser-automation)
+- [Commands & Capabilities](#commands--capabilities)
 - [Experimental Features](#experimental-features)
 - [Project Structure](#project-structure)
 - [Tech Stack](#tech-stack)
@@ -78,7 +79,7 @@ This build strips those injections. The model's own safety training still applie
 
 ### Experimental features unlocked
 
-Claude Code ships with 88 feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. This build unlocks all 54 flags that compile cleanly. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
+Claude Code ships with 88 feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. Of the 88, **55 bundle cleanly** and 33 still fail; `bun run build:dev:full` enables a curated **36-flag working bundle** of them. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
 
 ### Claude-in-Chrome replaced
 
@@ -221,7 +222,7 @@ Supports custom deployment IDs as model names.
 ## Requirements
 
 - **Runtime**: [Bun](https://bun.sh) >= 1.3.11
-- **OS**: macOS or Linux (Windows via WSL)
+- **OS**: macOS, Linux, or Windows (native — see the PowerShell installer above; or via WSL)
 - **Auth**: An API key or OAuth login for your chosen provider
 
 ```bash
@@ -244,10 +245,12 @@ bun build
 
 | Command | Output | Features | Description |
 |---|---|---|---|
-| `bun run build` | `./cli` | `VOICE_MODE` only | Production-like binary |
-| `bun run build:dev` | `./cli-dev` | `VOICE_MODE` only | Dev version stamp |
-| `bun run build:dev:full` | `./cli-dev` | All 54 experimental flags | Full unlock build |
-| `bun run compile` | `./dist/cli` | `VOICE_MODE` only | Alternative output path |
+| `bun run build` | `./cli` | defaults (`VOICE_MODE`, `BUDDY`) | Production-like binary |
+| `bun run build:dev` | `./cli-dev` | defaults (`VOICE_MODE`, `BUDDY`) | Dev version stamp |
+| `bun run build:dev:full` | `./cli-dev` | defaults + the 36-flag working bundle | Full unlock build |
+| `bun run compile` | `./dist/cli` | defaults (`VOICE_MODE`, `BUDDY`) | Alternative output path |
+
+> All builds also embed the platform's ripgrep (self-extracts on first use) so file search works with no external `rg`. On Windows, `compile`/`--target=windows` produce a single `.exe`.
 
 ### Custom Feature Flags
 
@@ -318,9 +321,38 @@ Requires Chrome, Chromium, or Edge installed. Toggle with `/browser on` / `/brow
 
 ---
 
+## Commands & Capabilities
+
+Run `/help` in the REPL for the full command list. free-code keeps all of Claude Code's built-in machinery and adds a few fork extras.
+
+**Fork extras**
+
+| Command | What it does |
+|---|---|
+| `/provider` | Add OpenAI-compatible endpoints (NIM, OpenRouter, vLLM, …) — see [Model Providers](#model-providers) |
+| `/browser` | Drive your installed Chrome over CDP — see [Browser Automation](#browser-automation) |
+| `/color` | Recolor the startup banner border + the Clawd figure (`/color cyan`, `/color #ff8800`, `/color reset`) |
+| `/buddy` | Hatch a terminal companion (the April Fools easter egg) — `pet`, `rename`, `release`, `mute` |
+
+**Inherited Claude Code essentials** (all working)
+
+| Area | How |
+|---|---|
+| MCP servers | `/mcp`, or `--mcp-config <file>` — connect external tools/data |
+| Skills | `/skills`, or drop `.md` files in `~/.claude/skills/`; invoke with `/skill-name` |
+| Memory | `/memory`, plus `CLAUDE.md` auto-discovery for project context |
+| Hooks | `/hooks` — run shell commands on tool/file events |
+| Plugins | `/plugin` (alias `/marketplace`) — install community plugins |
+| Custom agents | `/agents` — define agent presets; `--agents` to load |
+| Checkpoints | `/rewind` — restore code/conversation to an earlier point |
+| IDE bridge | `/ide` — VS Code / JetBrains / Cursor integration |
+| Diagnostics | `/doctor`, `/status`, `/cost`, `/context` |
+
+---
+
 ## Experimental Features
 
-The `bun run build:dev:full` build enables all 54 working feature flags. Highlights:
+The `bun run build:dev:full` build enables the 36-flag working bundle (of the 55 that compile cleanly). Highlights:
 
 ### Interaction & UI
 
@@ -356,7 +388,7 @@ The `bun run build:dev:full` build enables all 54 working feature flags. Highlig
 | `BASH_CLASSIFIER` | Classifier-assisted bash permission decisions |
 | `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow |
 
-See [FEATURES.md](FEATURES.md) for the complete audit of all 88 flags, including 34 broken flags with reconstruction notes.
+See [FEATURES.md](FEATURES.md) for the complete audit of all 88 flags, including 33 broken flags with reconstruction notes.
 
 ---
 
@@ -410,7 +442,7 @@ src/
 
 ## Contributing
 
-Contributions are welcome. If you're working on restoring one of the 34 broken feature flags, check the reconstruction notes in [FEATURES.md](FEATURES.md) first -- many are close to compiling and just need a small wrapper or missing asset.
+Contributions are welcome. If you're working on restoring one of the 33 broken feature flags, check the reconstruction notes in [FEATURES.md](FEATURES.md) first -- many are close to compiling and just need a small wrapper or missing asset.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)

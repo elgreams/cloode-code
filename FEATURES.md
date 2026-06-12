@@ -6,8 +6,8 @@ This repository currently references 88 `feature('FLAG')` compile-time flags.
 I re-checked them by bundling the CLI once per flag on top of the current
 external-build defines and externals. Result:
 
-- 54 flags bundle cleanly in this snapshot
-- 34 flags still fail to bundle
+- 55 flags bundle cleanly (incl. `BUDDY`, reconstructed in this fork)
+- 33 flags still fail to bundle
 
 Important: "bundle cleanly" does not always mean "runtime-safe". Some flags
 still depend on optional native modules, claude.ai OAuth, GrowthBook gates, or
@@ -34,6 +34,10 @@ externalized `@ant/*` packages.
   It enables `/voice`, push-to-talk UI, voice notices, and dictation plumbing.
   Runtime still depends on claude.ai OAuth plus either the native audio module
   or a fallback recorder such as SoX.
+- `BUDDY`
+  Reconstructed in this fork (`src/commands/buddy/index.ts` was missing from the
+  snapshot) and promoted to a default flag. Enables the `/buddy` terminal
+  companion — hatch/pet/rename/release/mute — plus the in-prompt sprite.
 
 ## Working Experimental Features
 
@@ -205,9 +209,8 @@ entire subsystem.
 - `BG_SESSIONS`
   Fails on missing `src/cli/bg.js`. The CLI fast-path dispatch in
   `src/entrypoints/cli.tsx` is already wired.
-- `BUDDY`
-  Fails on missing `src/commands/buddy/index.js`. The buddy UI components and
-  prompt-input hooks already exist.
+- `BUDDY` — **RESTORED.** The missing `src/commands/buddy/index.ts` has been
+  reconstructed and the flag is now default-on (see Default Build Flags above).
 - `BUILDING_CLAUDE_APPS`
   Fails on missing `src/claude-api/csharp/claude-api.md`. This looks like an
   asset/document gap, not a missing runtime subsystem.
@@ -304,14 +307,14 @@ missing import is only the visible edge of a broader absent subsystem.
 ## Useful Entry Points
 
 - Feature-aware build logic:
-  [scripts/build.ts](/Users/paolo/Repos/claude-code/scripts/build.ts)
+  [scripts/build.ts](scripts/build.ts)
 - Feature-gated command imports:
-  [src/commands.ts](/Users/paolo/Repos/claude-code/src/commands.ts)
+  [src/commands.ts](src/commands.ts)
 - Feature-gated tool imports:
-  [src/tools.ts](/Users/paolo/Repos/claude-code/src/tools.ts)
+  [src/tools.ts](src/tools.ts)
 - Feature-gated task imports:
-  [src/tasks.ts](/Users/paolo/Repos/claude-code/src/tasks.ts)
+  [src/tasks.ts](src/tasks.ts)
 - Feature-gated query behavior:
-  [src/query.ts](/Users/paolo/Repos/claude-code/src/query.ts)
+  [src/query.ts](src/query.ts)
 - Feature-gated CLI entry paths:
-  [src/entrypoints/cli.tsx](/Users/paolo/Repos/claude-code/src/entrypoints/cli.tsx)
+  [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx)
