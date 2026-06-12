@@ -30,6 +30,7 @@ import logout from './commands/logout/index.js'
 import loginChatgpt from './commands/login-chatgpt/index.js'
 import logoutChatgpt from './commands/logout-chatgpt/index.js'
 import browser from './commands/browser/index.js'
+import provider from './commands/provider/index.js'
 import installGitHubApp from './commands/install-github-app/index.js'
 import installSlackApp from './commands/install-slack-app/index.js'
 import breakCache from './commands/break-cache/index.js'
@@ -337,6 +338,7 @@ const COMMANDS = memoize((): Command[] => [
   exportCommand,
   sandboxToggle,
   browser,
+  provider,
   ...(!isUsing3PServices() ? [logout, login(), logoutChatgpt, loginChatgpt] : []),
   passes,
   ...(peersCmd ? [peersCmd] : []),
