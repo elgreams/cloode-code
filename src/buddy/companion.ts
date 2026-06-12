@@ -1,4 +1,4 @@
-import { getGlobalConfig } from '../utils/config.js'
+import { getGlobalConfig, getOrCreateUserID } from '../utils/config.js'
 import {
   type Companion,
   type CompanionBones,
@@ -118,7 +118,11 @@ export function rollWithSeed(seed: string): Roll {
 
 export function companionUserId(): string {
   const config = getGlobalConfig()
-  return config.oauthAccount?.accountUuid ?? config.userID ?? 'anon'
+  // Prefer the stable account UUID; otherwise mint + persist the per-install
+  // device id immediately (getOrCreateUserID, not the raw config.userID). Without
+  // this, hatching on a fresh install before any API call would seed from 'anon'
+  // and the creature's appearance would silently re-roll once the id appears.
+  return config.oauthAccount?.accountUuid ?? getOrCreateUserID()
 }
 
 // Regenerate bones from userId, merge with stored soul. Bones never persist
