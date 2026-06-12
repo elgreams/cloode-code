@@ -195,6 +195,10 @@ export type GlobalConfig = {
   doctorShownAtSession?: number
   userID?: string
   theme: ThemeSetting
+  // Optional accent-color override set via /color. Recolors the startup banner
+  // border + the Clawd figure (and other startupAccent-tinted elements). Stored
+  // as a theme color string: rgb(r,g,b), #hex, or ansi:name.
+  accentColorOverride?: string
   hasCompletedOnboarding?: boolean
   // Tracks the last version that reset onboarding, used with MIN_VERSION_REQUIRING_ONBOARDING_RESET
   lastOnboardingVersion?: string

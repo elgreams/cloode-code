@@ -602,7 +602,7 @@ const darkDaltonizedTheme: Theme = {
   rainbow_violet_shimmer: 'rgb(230,180,210)',
 }
 
-export function getTheme(themeName: ThemeName): Theme {
+function baseTheme(themeName: ThemeName): Theme {
   switch (themeName) {
     case 'light':
       return lightTheme
@@ -616,6 +616,32 @@ export function getTheme(themeName: ThemeName): Theme {
       return darkDaltonizedTheme
     default:
       return darkTheme
+  }
+}
+
+export function getTheme(themeName: ThemeName): Theme {
+  const base = baseTheme(themeName)
+  // Apply the /color accent override — recolors the startup banner border and
+  // the Clawd figure (plus other startupAccent-tinted elements). Only spread a
+  // new object when an override is set, so the common path keeps returning the
+  // shared theme instance.
+  const override = getAccentColorOverride()
+  if (!override) {
+    return base
+  }
+  return { ...base, startupAccent: override, clawd_body: override }
+}
+
+// Read the override lazily (config.ts only type-imports theme.ts, so this can't
+// deadlock module init).
+function getAccentColorOverride(): string | undefined {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getGlobalConfig } =
+      require('./config.js') as typeof import('./config.js')
+    return getGlobalConfig().accentColorOverride
+  } catch {
+    return undefined
   }
 }
 
