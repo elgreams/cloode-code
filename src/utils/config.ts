@@ -254,6 +254,12 @@ export type GlobalConfig = {
   // Learned from real 400 responses and excluded from the /model menu, so the
   // list self-heals even when remote discovery is unavailable.
   codexUnsupportedModels?: string[]
+  // User-configured OpenAI-compatible providers (NIM, OpenRouter, vLLM, …),
+  // managed by /provider. See src/services/api/openai-compat/.
+  openAICompatProviders?: import('../services/api/openai-compat/types.js').OpenAICompatProvider[]
+  // Model ids an OpenAI-compatible backend rejected as unsupported — self-heals
+  // the /model menu, mirroring codexUnsupportedModels.
+  openAICompatUnsupportedModels?: string[]
   // Whether the browser-automation MCP server is enabled (default off).
   // Toggled by /browser; read at startup to inject the server.
   browserEnabled?: boolean
