@@ -1,5 +1,6 @@
 import type { ChildProcess, ExecFileException } from 'child_process'
 import { execFile, spawn } from 'child_process'
+import { existsSync } from 'fs'
 import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import * as path from 'path'
@@ -53,6 +54,19 @@ const getRipgrepConfig = memoize((): RipgrepConfig => {
       args: ['--no-config'],
       argv0: 'rg',
     }
+  }
+
+  // Compiled-standalone sidecar: a real rg binary shipped next to the
+  // executable (build.ts copies it in). Required because this fork compiles
+  // with standard Bun, which has neither the virtual-FS `vendor/` assets below
+  // (they resolve into Bun's read-only ~BUN/root FS and can't be exec'd) nor
+  // the argv0-dispatch embedded ripgrep of Anthropic's Bun fork. Without this,
+  // file search (Grep/Glob/file-index) fails with ENOENT on machines that lack
+  // a system `rg` — notably the Windows build.
+  const rgName = process.platform === 'win32' ? 'rg.exe' : 'rg'
+  const sidecar = path.join(path.dirname(process.execPath), rgName)
+  if (existsSync(sidecar)) {
+    return { mode: 'builtin', command: sidecar, args: [] }
   }
 
   const rgRoot = path.resolve(__dirname, 'vendor', 'ripgrep')

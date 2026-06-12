@@ -1,5 +1,5 @@
-import { chmodSync, existsSync, mkdirSync } from 'fs'
-import { dirname } from 'path'
+import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'fs'
+import { dirname, join } from 'path'
 
 const pkg = await Bun.file(new URL('../package.json', import.meta.url)).json() as {
   name: string
@@ -209,6 +209,22 @@ if (proc.exitCode !== 0) {
 
 if (existsSync(outfile)) {
   chmodSync(outfile, 0o755)
+}
+
+// Ship a ripgrep binary next to the compiled executable (sidecar). Standard
+// Bun can't run the virtual-FS vendored rg, so file search needs a real rg on
+// disk beside the exe — see the builtin branch in src/utils/ripgrep.ts.
+const rgPlat = windows ? 'win32' : process.platform
+const rgArch = windows ? 'x64' : process.arch
+const rgName = rgPlat === 'win32' ? 'rg.exe' : 'rg'
+const rgSrc = `node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/${rgArch}-${rgPlat}/${rgName}`
+const rgDest = join(dirname(outfile), rgName)
+if (existsSync(rgSrc)) {
+  copyFileSync(rgSrc, rgDest)
+  chmodSync(rgDest, 0o755)
+  console.log(`Bundled ripgrep sidecar: ${rgDest}`)
+} else {
+  console.warn(`⚠ ripgrep binary not found at ${rgSrc}; file search will need a system rg`)
 }
 
 console.log(`Built ${outfile}`)

@@ -50,6 +50,11 @@ function shouldUseStandaloneExecutableForChromeHost(): boolean {
 }
 
 export function shouldEnableClaudeInChrome(chromeFlag?: boolean): boolean {
+  // Claude-in-Chrome is permanently disabled in this fork: it requires the
+  // private `@ant/claude-for-chrome-mcp` package, which is externalized and
+  // never bundled, so its MCP server always fails to connect ("Cannot find
+  // module"). The `/browser` feature (custom CDP server) supersedes it.
+  return false
   // Disable by default in non-interactive sessions (e.g., SDK, CI)
   if (getIsNonInteractiveSession() && chromeFlag !== true) {
     return false
@@ -83,6 +88,8 @@ export function shouldEnableClaudeInChrome(chromeFlag?: boolean): boolean {
 let shouldAutoEnable: boolean | undefined = undefined
 
 export function shouldAutoEnableClaudeInChrome(): boolean {
+  // Permanently disabled in this fork — see shouldEnableClaudeInChrome above.
+  return false
   if (shouldAutoEnable !== undefined) {
     return shouldAutoEnable
   }
