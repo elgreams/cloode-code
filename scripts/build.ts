@@ -55,12 +55,19 @@ const fullExperimentalFeatures = [
 ] as const
 
 function runCommand(cmd: string[]): string | null {
-  const proc = Bun.spawnSync({
-    cmd,
-    cwd: process.cwd(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  let proc: ReturnType<typeof Bun.spawnSync>
+  try {
+    proc = Bun.spawnSync({
+      cmd,
+      cwd: process.cwd(),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+  } catch {
+    // e.g. the executable isn't on PATH — degrade gracefully instead of
+    // crashing the build (git is only used for the dev version string).
+    return null
+  }
 
   if (proc.exitCode !== 0) {
     return null

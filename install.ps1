@@ -94,6 +94,9 @@ try {
 } finally { Pop-Location }
 Ok "Dependencies installed"
 
+# build.ts shells out to `git` for the dev version string; make sure git is on
+# PATH for the build subprocess (Bun's installer above may have dropped it).
+$env:Path = "$(Split-Path $Git);$env:Path"
 Info "Building free-code (all experimental features enabled)..."
 Push-Location $InstallDir
 try { bun run build:dev:full } finally { Pop-Location }
