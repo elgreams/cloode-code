@@ -6,8 +6,8 @@ import {
 
 const ENABLED_MSG =
   'Browser automation ENABLED. Restart free-code to load the browser tools ' +
-  '(mcp__browser__*). It drives your installed Chrome with a persistent ' +
-  'profile (logins stick) — no extra install, no Node required.'
+  '(mcp__browser__*). They drive your installed Chrome with a persistent ' +
+  'profile, so logins stick between sessions.'
 
 const DISABLED_MSG =
   'Browser automation DISABLED. Restart free-code to unload the browser tools.'

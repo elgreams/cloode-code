@@ -6,6 +6,12 @@ import { logForDebugging } from '../debug.js'
 
 const BUFFER_LIMIT = 200
 
+// How long to wait for an element to become actionable before giving up. This
+// is our stand-in for Playwright's auto-waiting; override via env if a page is
+// unusually slow.
+const ACTION_TIMEOUT_MS =
+  Number(process.env.CLAUDE_BROWSER_ACTION_TIMEOUT_MS) || 5000
+
 type ConsoleEntry = { level: string; text: string }
 type NetworkEntry = {
   method: string
@@ -245,30 +251,73 @@ export class BrowserSession {
     return String(value ?? '')
   }
 
-  /** Resolve a ref to its center viewport coordinates, scrolling it into view. */
-  private async refPoint(
+  /**
+   * Poll until the element for `ref` is actionable — present in the DOM,
+   * visible, enabled, not covered by another element, and geometrically stable
+   * (two consecutive identical bounding boxes, so animations/layout have
+   * settled) — or until ACTION_TIMEOUT_MS. Returns the click point, or an error
+   * describing why it never became actionable.
+   *
+   * This is the auto-waiting Playwright gives for free; without it a click can
+   * land before the page is ready (mid-animation, behind an overlay, on a
+   * not-yet-enabled button) and silently miss.
+   */
+  private async waitForActionable(
     ref: string,
   ): Promise<{ x: number; y: number } | { error: string }> {
     const expr = `(() => {
       const el = window.__brefMap && window.__brefMap[${JSON.stringify(ref)}];
-      if (!el) return { __err: 'ref ${ref} not found — take a fresh browser_snapshot' };
+      if (!el) return { status: 'missing' };
+      if (!el.isConnected) return { status: 'detached' };
       el.scrollIntoView({ block: 'center', inline: 'center' });
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0)
+        return { status: 'hidden' };
       const r = el.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) return { __err: 'element for ${ref} is not visible' };
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      if (r.width === 0 && r.height === 0) return { status: 'hidden' };
+      if (el.disabled || el.getAttribute('aria-disabled') === 'true')
+        return { status: 'disabled' };
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const top = document.elementFromPoint(cx, cy);
+      const covered = !top || (top !== el && !el.contains(top) && !top.contains(el));
+      return { status: covered ? 'covered' : 'ok', x: cx, y: cy,
+        box: Math.round(r.left) + ',' + Math.round(r.top) + ',' + Math.round(r.width) + ',' + Math.round(r.height) };
     })()`
-    const { value, error } = await this.evalRaw(expr)
-    if (error) {
-      return { error }
+    const start = Date.now()
+    let lastStatus = 'missing'
+    let prevBox = ''
+    while (Date.now() - start < ACTION_TIMEOUT_MS) {
+      const { value, error } = await this.evalRaw(expr)
+      if (error) {
+        return { error }
+      }
+      const v = (value ?? {}) as {
+        status?: string
+        x?: number
+        y?: number
+        box?: string
+      }
+      lastStatus = v.status ?? 'missing'
+      if (lastStatus === 'ok' && typeof v.x === 'number' && typeof v.y === 'number') {
+        // Require geometric stability across two polls before acting.
+        if (v.box && v.box === prevBox) {
+          return { x: v.x, y: v.y }
+        }
+        prevBox = v.box ?? ''
+      } else {
+        prevBox = ''
+      }
+      await new Promise(r => setTimeout(r, 100))
     }
-    const v = value as { x?: number; y?: number; __err?: string }
-    if (v?.__err) {
-      return { error: v.__err }
+    const reason: Record<string, string> = {
+      missing: `ref ${ref} not found — take a fresh browser_snapshot`,
+      detached: `element for ${ref} was removed from the page — take a fresh browser_snapshot`,
+      hidden: `element for ${ref} never became visible`,
+      disabled: `element for ${ref} stayed disabled`,
+      covered: `element for ${ref} is covered by another element`,
+      ok: `element for ${ref} did not stop moving`,
     }
-    if (typeof v?.x !== 'number' || typeof v?.y !== 'number') {
-      return { error: `could not locate ${ref}` }
-    }
-    return { x: v.x, y: v.y }
+    return { error: reason[lastStatus] ?? `element for ${ref} is not actionable` }
   }
 
   async click(ref: string, doubleClick = false): Promise<void> {
@@ -276,7 +325,7 @@ export class BrowserSession {
     if (!cdp) {
       throw new Error('browser not started')
     }
-    const pt = await this.refPoint(ref)
+    const pt = await this.waitForActionable(ref)
     if ('error' in pt) {
       throw new Error(pt.error)
     }
@@ -300,6 +349,11 @@ export class BrowserSession {
     const cdp = this.cdp
     if (!cdp) {
       throw new Error('browser not started')
+    }
+    // Auto-wait for the field to be present/visible/enabled before typing.
+    const ready = await this.waitForActionable(ref)
+    if ('error' in ready) {
+      throw new Error(ready.error)
     }
     // Focus + clear the field first so typing replaces existing content.
     const focus = await this.evalRaw(`(() => {
