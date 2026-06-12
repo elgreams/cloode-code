@@ -1,4 +1,5 @@
 import { logForDebugging } from '../../../utils/debug.js'
+import { recordUnsupportedOpenAICompatModel } from './discovery.js'
 
 // Custom `fetch` that makes a standard OpenAI `/v1/chat/completions` endpoint
 // (NIM, OpenRouter, vLLM, Ollama, …) look like the Anthropic Messages API to the
@@ -481,6 +482,16 @@ export function createOpenAICompatFetch(opts: {
       logForDebugging(
         `[openai-compat] ${endpoint} -> ${res.status}: ${errText.slice(0, 500)}`,
       )
+      // Self-heal: if the backend rejects the model, remember it so /model stops
+      // offering it (mirrors recordUnsupportedCodexModel).
+      if (
+        res.status === 404 ||
+        /not found|does not exist|no such model|unsupported|invalid model|unknown model/i.test(
+          errText,
+        )
+      ) {
+        recordUnsupportedOpenAICompatModel(String(body.model))
+      }
       return new Response(
         JSON.stringify({
           type: 'error',

@@ -54,6 +54,7 @@ import { seedEarlyInput, stopCapturingEarlyInput } from './utils/earlyInput.js';
 import { getInitialEffortSetting, parseEffortValue } from './utils/effort.js';
 import { getInitialFastModeSetting, isFastModeEnabled, prefetchFastModeStatus, resolveFastModeStatusFromCache } from './utils/fastMode.js';
 import { prefetchCodexModelsIfSafe } from './utils/model/codexModels.js';
+import { prefetchOpenAICompatModelsIfSafe } from './services/api/openai-compat/discovery.js';
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js';
 import { createSystemMessage, createUserMessage } from './utils/messages.js';
 import { getPlatform } from './utils/platform.js';
@@ -413,6 +414,7 @@ export function startDeferredPrefetches(): void {
     void prefetchGcpCredentialsIfSafe();
   }
   prefetchCodexModelsIfSafe();
+  prefetchOpenAICompatModelsIfSafe();
   void countFilesRoundedRg(getCwd(), AbortSignal.timeout(3000), []);
 
   // Analytics and feature flag initialization

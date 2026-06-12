@@ -12,17 +12,40 @@ import type { OpenAICompatModel, OpenAICompatProvider } from './types.js'
  * model-list construction) can't crash on the config-access guard.
  */
 export function listProviders(): OpenAICompatProvider[] {
-  let configured: OpenAICompatProvider[]
+  let config: ReturnType<typeof getGlobalConfig>
   try {
-    configured = getGlobalConfig().openAICompatProviders ?? []
+    config = getGlobalConfig()
   } catch {
     return []
   }
+  const configured = config.openAICompatProviders ?? []
   const names = new Set(configured.map(p => p.name))
   const fromEnv: OpenAICompatProvider[] = PROVIDER_PRESETS.filter(
     p => !names.has(p.name) && !!process.env[p.apiKeyEnv],
   ).map(p => ({ ...p, models: [...p.models] }))
-  return [...configured, ...fromEnv]
+
+  const cache = config.openAICompatModelCache ?? {}
+  const unsupported = new Set(config.openAICompatUnsupportedModels ?? [])
+
+  // Merge each provider's seed models with its discovered cache (seed labels
+  // win), then drop any ids the backend has rejected.
+  return [...configured, ...fromEnv].map(p => {
+    const byId = new Map<string, OpenAICompatModel>()
+    for (const m of p.models) {
+      if (!byId.has(m.id)) {
+        byId.set(m.id, m)
+      }
+    }
+    for (const m of cache[p.name]?.models ?? []) {
+      if (!byId.has(m.id)) {
+        byId.set(m.id, m)
+      }
+    }
+    return {
+      ...p,
+      models: [...byId.values()].filter(m => !unsupported.has(m.id)),
+    }
+  })
 }
 
 /** True if `modelId` belongs to a configured/active OpenAI-compatible provider. */

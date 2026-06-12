@@ -260,6 +260,15 @@ export type GlobalConfig = {
   // Model ids an OpenAI-compatible backend rejected as unsupported — self-heals
   // the /model menu, mirroring codexUnsupportedModels.
   openAICompatUnsupportedModels?: string[]
+  // Per-provider models discovered from each backend's /v1/models endpoint,
+  // keyed by provider name. Background-refreshed; merged with the seed for /model.
+  openAICompatModelCache?: Record<
+    string,
+    {
+      models: import('../services/api/openai-compat/types.js').OpenAICompatModel[]
+      fetchedAt: number
+    }
+  >
   // Whether the browser-automation MCP server is enabled (default off).
   // Toggled by /browser; read at startup to inject the server.
   browserEnabled?: boolean
