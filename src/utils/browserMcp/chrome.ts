@@ -1,6 +1,12 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { delimiter, join } from 'node:path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { logForDebugging } from '../debug.js'
 
@@ -54,12 +60,34 @@ function chromeCandidates(): string[] {
   ]
 }
 
+// Resolve a bare executable name (no path separator) against PATH, the way the
+// OS would at spawn time. Returns the first existing match, or undefined.
+function resolveOnPath(name: string): string | undefined {
+  const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
+  for (const dir of dirs) {
+    const full = join(dir, name)
+    if (existsSync(full)) {
+      return full
+    }
+  }
+  return undefined
+}
+
 function resolveChromePath(): string | undefined {
   for (const cand of chromeCandidates()) {
-    // Bare names (no path separator) are resolved by the OS via PATH at spawn;
-    // accept them optimistically. Absolute paths must exist on disk.
+    // Bare names (no path separator) must be resolved against PATH here, not
+    // accepted blindly: if we hand a non-existent name like `google-chrome` to
+    // spawn(), it fails with ENOENT *after* launchChrome() has already moved on
+    // to polling for DevToolsActivePort — which then times out with a
+    // misleading "did not expose a DevTools port" error instead of falling
+    // through to the next candidate (e.g. `chromium`). Absolute paths just need
+    // to exist on disk.
     if (!cand.includes('/') && !cand.includes('\\')) {
-      return cand
+      const resolved = resolveOnPath(cand)
+      if (resolved) {
+        return resolved
+      }
+      continue
     }
     if (existsSync(cand)) {
       return cand
@@ -72,6 +100,45 @@ export type LaunchedChrome = {
   proc: ChildProcess
   port: number
   browserWSEndpoint: string
+}
+
+// We record the launched Chrome's PID here so a later launch can evict it. The
+// profile is single-owner (only the MCP ever uses it), so any Chrome still
+// bound to it after our process is gone is an orphan from a crashed session.
+function chromePidFile(profileDir: string): string {
+  return join(profileDir, 'mcp_chrome.pid')
+}
+
+/**
+ * Kill any Chrome we previously launched on this profile that is still alive,
+ * then clear the singleton lock files it left behind. Without this, launching a
+ * second Chrome on the same `--user-data-dir` makes the new process hand off to
+ * the surviving instance and exit *without* writing DevToolsActivePort — which
+ * surfaces as "Chrome did not expose a DevTools port in time". A crashed session
+ * (our shutdown() never ran) is exactly when this orphan is left behind.
+ */
+function reapOrphanChrome(profileDir: string): void {
+  const pidFile = chromePidFile(profileDir)
+  if (existsSync(pidFile)) {
+    const pid = Number.parseInt(readFileSync(pidFile, 'utf8').trim(), 10)
+    if (Number.isFinite(pid) && pid > 0) {
+      try {
+        // Signal 0 just tests for existence; if it throws, the process is gone.
+        process.kill(pid, 0)
+        process.kill(pid)
+        logForDebugging(`[browser] reaped orphan chrome pid ${pid}`)
+      } catch {
+        // Not running (or not ours to kill) — nothing to reap.
+      }
+    }
+    rmSync(pidFile, { force: true })
+  }
+  // Chrome treats a live SingletonLock as "another instance owns this profile"
+  // and hands off to it. With the owner now dead, drop the stale lock so our
+  // fresh launch takes ownership instead of handing off.
+  for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+    rmSync(join(profileDir, name), { force: true })
+  }
 }
 
 async function readDevToolsPort(
@@ -118,6 +185,9 @@ export async function launchChrome(): Promise<LaunchedChrome> {
   mkdirSync(profile, { recursive: true })
   // A stale port file from a crashed prior run would be read as a live port.
   rmSync(join(profile, 'DevToolsActivePort'), { force: true })
+  // Evict any orphaned Chrome from a crashed session so we launch a fresh
+  // instance instead of handing off to it (which never writes the port file).
+  reapOrphanChrome(profile)
 
   const args = [
     '--remote-debugging-port=0', // 0 → Chrome picks a free port, written to DevToolsActivePort
@@ -139,11 +209,30 @@ export async function launchChrome(): Promise<LaunchedChrome> {
     // the handle and kill it explicitly on shutdown.
     detached: false,
   })
-  proc.on('error', err =>
-    logForDebugging(`[browser] chrome spawn error: ${err}`),
-  )
+  // If spawn itself fails (e.g. ENOENT), surface it immediately rather than
+  // letting readDevToolsPort() burn its full 30s timeout on a process that
+  // never started, then report the misleading "no DevTools port" error.
+  const spawnFailed = new Promise<never>((_, reject) => {
+    proc.on('error', err => {
+      logForDebugging(`[browser] chrome spawn error: ${err}`)
+      reject(
+        new Error(
+          `Failed to launch Chrome (${exe}): ${(err as Error).message}`,
+        ),
+      )
+    })
+  })
 
-  const port = await readDevToolsPort(profile, 30_000)
+  // Record the PID so a later launch (after a crash that skips shutdown()) can
+  // find and reap this Chrome before colliding on the profile.
+  if (proc.pid) {
+    writeFileSync(chromePidFile(profile), String(proc.pid), 'utf8')
+  }
+
+  const port = await Promise.race([
+    readDevToolsPort(profile, 30_000),
+    spawnFailed,
+  ])
   const version = (await (
     await fetch(`http://127.0.0.1:${port}/json/version`)
   ).json()) as { webSocketDebuggerUrl?: string }
