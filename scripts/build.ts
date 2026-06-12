@@ -179,7 +179,10 @@ const cmd = [
   '--outfile',
   outfile,
   '--minify',
-  ...(windows ? [] : ['--bytecode']),
+  // Skip bytecode for any Windows output — cross-compiled (--target=windows)
+  // or a native Windows host build (what install.ps1 runs). Bytecode is
+  // unreliable for Windows targets.
+  ...(windows || process.platform === 'win32' ? [] : ['--bytecode']),
   '--packages',
   'bundle',
   '--conditions',

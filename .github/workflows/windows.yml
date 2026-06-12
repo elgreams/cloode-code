@@ -1,0 +1,62 @@
+name: Windows build
+
+# Verifies the native Windows build and the PowerShell installer on a real
+# windows-latest runner — the two things that can't be checked when building/
+# cross-compiling from Linux.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Native build + smoke test
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build (all experimental features)
+        run: bun run build:dev:full
+
+      - name: Verify the compiled exe exists and runs
+        shell: pwsh
+        run: |
+          if (-not (Test-Path .\cli-dev.exe)) { throw "cli-dev.exe was not produced by the build" }
+          $size = (Get-Item .\cli-dev.exe).Length
+          Write-Host "cli-dev.exe size: $([math]::Round($size/1MB,1)) MB"
+          $v = & .\cli-dev.exe --version
+          Write-Host "cli-dev.exe --version -> $v"
+          if (-not $v) { throw "cli-dev.exe did not print a version" }
+
+  installer:
+    name: install.ps1 one-liner (real Windows)
+    runs-on: windows-latest
+    needs: build
+    # install.ps1 clones the published main branch, so only meaningful once
+    # the change is on main (not on PRs from forks/branches).
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 25
+    steps:
+      - name: Run the published installer
+        shell: pwsh
+        run: irm https://raw.githubusercontent.com/elgreams/free-code/main/install.ps1 | iex
+
+      - name: Verify free-code resolves via the shim
+        shell: pwsh
+        run: |
+          $shim = Join-Path $HOME '.local\bin\free-code.cmd'
+          if (-not (Test-Path $shim)) { throw "free-code.cmd shim was not created" }
+          $v = & $shim --version
+          Write-Host "free-code --version -> $v"
+          if (-not $v) { throw "free-code shim did not print a version" }

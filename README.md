@@ -21,11 +21,19 @@
 
 ## Quick Install
 
+**macOS / Linux:**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/elgreams/free-code/main/install.sh | bash
 ```
 
-Checks your system, installs Bun if needed, clones the repo, builds with all experimental features enabled, and symlinks `free-code` on your PATH.
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/elgreams/free-code/main/install.ps1 | iex
+```
+
+Each installer checks your system, installs [Bun](https://bun.sh) if needed, clones the repo, builds with all experimental features enabled, and puts `free-code` on your PATH (a symlink on macOS/Linux, a `free-code.cmd` shim on Windows). You'll need [git](https://git-scm.com/downloads) installed first.
 
 Then run `free-code` and use the `/login` command to authenticate with your preferred model provider.
 
@@ -39,6 +47,7 @@ Then run `free-code` and use the `/login` command to authenticate with your pref
 - [Requirements](#requirements)
 - [Build](#build)
 - [Usage](#usage)
+- [Browser Automation](#browser-automation)
 - [Experimental Features](#experimental-features)
 - [Project Structure](#project-structure)
 - [Tech Stack](#tech-stack)
@@ -70,6 +79,10 @@ This build strips those injections. The model's own safety training still applie
 ### Experimental features unlocked
 
 Claude Code ships with 88 feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. This build unlocks all 54 flags that compile cleanly. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
+
+### Claude-in-Chrome replaced
+
+The upstream Claude-in-Chrome integration depends on an unpublished Anthropic package and cannot run in this fork, so it is disabled. The built-in [`/browser` automation](#browser-automation) replaces it — it drives your installed Chrome directly, with no extension or extra dependencies.
 
 ---
 
@@ -250,6 +263,21 @@ bun run dev
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Custom Haiku model ID |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token via env |
 | `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | API key helper cache TTL |
+| `CLAUDE_BROWSER_EXECUTABLE` | Path to a specific Chrome/Chromium binary for `/browser` |
+| `CLAUDE_BROWSER_EXTRA_ARGS` | Extra args passed to Chrome at launch |
+| `CLAUDE_BROWSER_ACTION_TIMEOUT_MS` | Click/type auto-wait timeout (default 5000) |
+
+---
+
+## Browser Automation
+
+free-code can drive your installed Chrome directly — no extension, no Node, no Playwright. Enable it with `/browser on` (off by default; the setting persists), then restart. The tools surface as `mcp__browser__*`.
+
+- Drives your real Chrome/Chromium over the Chrome DevTools Protocol, with a persistent profile so logins stick between sessions.
+- Tools: navigate, accessibility snapshot, click, type, press key, evaluate JS, screenshot, console messages, network requests, wait, and tab management.
+- Clicks and typing auto-wait for the target to be visible, enabled, and settled before acting.
+
+Requires Chrome, Chromium, or Edge installed. Toggle with `/browser on` / `/browser off`. See the `CLAUDE_BROWSER_*` [environment variables](#environment-variables-reference) to point at a specific browser or tune the auto-wait timeout.
 
 ---
 
@@ -337,6 +365,7 @@ src/
 | **CLI Parsing** | [Commander.js](https://github.com/tj/commander.js) |
 | **Schema Validation** | Zod v4 |
 | **Code Search** | ripgrep (bundled) |
+| **Browser** | Chrome DevTools Protocol (native WebSocket) |
 | **Protocols** | MCP, LSP |
 | **APIs** | Anthropic Messages, OpenAI Codex, AWS Bedrock, Google Vertex AI |
 
