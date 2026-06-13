@@ -1,14 +1,16 @@
 import { feature } from 'bun:bundle'
+import { randomBytes } from 'crypto'
 import {
-  companionUserId,
   getCompanion,
-  roll,
+  rollCompanionBones,
 } from '../../buddy/companion.js'
 import { renderSprite } from '../../buddy/sprites.js'
 import {
   RARITY_STARS,
+  SPECIES,
   STAT_NAMES,
   type CompanionBones,
+  type Species,
   type StoredCompanion,
 } from '../../buddy/types.js'
 import type { LocalJSXCommandCall } from '../../types/command.js'
@@ -66,6 +68,24 @@ function statBar(n: number): string {
   return '█'.repeat(filled) + '░'.repeat(10 - filled)
 }
 
+function speciesFromArg(arg: string): Species | undefined {
+  return SPECIES.find(species => species === arg)
+}
+
+function hatchCompanion(): { soul: StoredCompanion; bones: CompanionBones } {
+  const { bones, inspirationSeed } = rollCompanionBones()
+  const soul = { ...generateSoul(bones, inspirationSeed), hatchedAt: Date.now() }
+  saveGlobalConfig(c => ({ ...c, companion: soul }))
+  return { soul, bones }
+}
+
+function overrideLabel(): string {
+  const override = getGlobalConfig().companionOverride
+  if (override?.mode === 'selected') return `selected (${override.selectedSpecies})`
+  if (override?.mode === 'rerolled') return 'rerolled'
+  return 'account default'
+}
+
 // A fenced text card: sprite art + name/rarity + stat bars + personality.
 function formatCard(
   name: string,
@@ -105,14 +125,60 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
 
   const stored = getGlobalConfig().companion
 
+  if (sub === 'list') {
+    return say(
+      `Available companions:\n\n${SPECIES.map(species => `- ${species}`).join('\n')}\n\nUse \`/buddy select <species>\`, \`/buddy reroll\`, or \`/buddy default\`.`,
+    )
+  }
+
+  if (sub === 'cheat') {
+    return say(
+      `Buddy cheat menu\n\nCurrent mode: **${overrideLabel()}**\n\nCommands:\n- \`/buddy list\` — show available species\n- \`/buddy select <species>\` — choose a companion species\n- \`/buddy reroll\` — roll a new deterministic companion\n- \`/buddy default\` — reset to account default\n- \`/buddy current\` — show current companion`,
+    )
+  }
+
+  if (sub === 'select') {
+    const species = speciesFromArg(restStr.toLowerCase())
+    if (!species) {
+      return say(
+        `Usage: \`/buddy select <species>\`\n\nAvailable: ${SPECIES.join(', ')}`,
+      )
+    }
+    saveGlobalConfig(c => ({
+      ...c,
+      companionOverride: { mode: 'selected', selectedSpecies: species },
+    }))
+    const { soul, bones } = hatchCompanion()
+    return say(
+      `Selected **${species}**.\n\n${formatCard(soul.name, soul.personality, bones)}`,
+    )
+  }
+
+  if (sub === 'reroll') {
+    const rerollSeed = randomBytes(6).toString('hex')
+    saveGlobalConfig(c => ({
+      ...c,
+      companionOverride: { mode: 'rerolled', rerollSeed },
+    }))
+    const { soul, bones } = hatchCompanion()
+    return say(
+      `Rerolled your companion.\n\n${formatCard(soul.name, soul.personality, bones)}`,
+    )
+  }
+
+  if (sub === 'default') {
+    saveGlobalConfig(c => ({ ...c, companionOverride: undefined }))
+    const { soul, bones } = hatchCompanion()
+    return say(
+      `Reset to your account default companion.\n\n${formatCard(soul.name, soul.personality, bones)}`,
+    )
+  }
+
   // Hatch when there's no companion yet and no (or an explicit "hatch") arg.
   if (!stored && (sub === '' || sub === 'hatch')) {
-    const { bones, inspirationSeed } = roll(companionUserId())
-    const soul = generateSoul(bones, inspirationSeed)
-    const hatched: StoredCompanion = { ...soul, hatchedAt: Date.now() }
-    saveGlobalConfig(c => ({ ...c, companion: hatched }))
+    const { soul, bones } = hatchCompanion()
     return say(
-      `🥚✨ A companion hatched!\n\n${formatCard(soul.name, soul.personality, bones)}\n\nIt now lives beside your prompt. Try \`/buddy pet\`, \`/buddy rename <name>\`, \`/buddy mute\`, or \`/buddy release\`.`,
+      `🥚✨ A companion hatched!\n\n${formatCard(soul.name, soul.personality, bones)}\n\nIt now lives beside your prompt. Try \`/buddy pet\`, \`/buddy rename <name>\`, \`/buddy mute\`, \`/buddy select <species>\`, \`/buddy reroll\`, or \`/buddy release\`.`,
     )
   }
   if (!stored) {
@@ -128,6 +194,10 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     case '':
     case 'show':
       return say(formatCard(companion.name, companion.personality, companion))
+    case 'current':
+      return say(
+        `Current mode: **${overrideLabel()}**\n\n${formatCard(companion.name, companion.personality, companion)}`,
+      )
     case 'pet':
       context.setAppState(s => ({ ...s, companionPetAt: Date.now() }))
       return say(`💕 You pet ${companion.name}.`)
@@ -156,7 +226,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       return say(`🔊 ${companion.name} is back.`)
     default:
       return say(
-        `Unknown subcommand "${sub}". Try: \`/buddy\` (show), \`pet\`, \`rename <name>\`, \`release\`, \`mute\`, \`unmute\`.`,
+        `Unknown subcommand "${sub}". Try: \`/buddy\` (show), \`pet\`, \`rename <name>\`, \`list\`, \`select <species>\`, \`reroll\`, \`default\`, \`release\`, \`mute\`, \`unmute\`.`,
       )
   }
 }

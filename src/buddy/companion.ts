@@ -10,6 +10,7 @@ import {
   SPECIES,
   STAT_NAMES,
   type StatName,
+  type Species,
 } from './types.js'
 
 // Mulberry32 — tiny seeded PRNG, good enough for picking ducks
@@ -88,11 +89,11 @@ export type Roll = {
   inspirationSeed: number
 }
 
-function rollFrom(rng: () => number): Roll {
+function rollFrom(rng: () => number, species?: Species): Roll {
   const rarity = rollRarity(rng)
   const bones: CompanionBones = {
     rarity,
-    species: pick(rng, SPECIES),
+    species: species ?? pick(rng, SPECIES),
     eye: pick(rng, EYES),
     hat: rarity === 'common' ? 'none' : pick(rng, HATS),
     shiny: rng() < 0.01,
@@ -112,8 +113,24 @@ export function roll(userId: string): Roll {
   return value
 }
 
-export function rollWithSeed(seed: string): Roll {
-  return rollFrom(mulberry32(hashString(seed)))
+export function rollWithSeed(seed: string, species?: Species): Roll {
+  return rollFrom(mulberry32(hashString(seed)), species)
+}
+
+export function rollCompanionBones(): Roll {
+  const config = getGlobalConfig()
+  const userId = companionUserId()
+  const override = config.companionOverride
+  if (override?.mode === 'selected') {
+    return rollWithSeed(
+      `${userId}:${SALT}:selected:${override.selectedSpecies}`,
+      override.selectedSpecies,
+    )
+  }
+  if (override?.mode === 'rerolled') {
+    return rollWithSeed(`${userId}:${SALT}:rerolled:${override.rerollSeed}`)
+  }
+  return roll(userId)
 }
 
 export function companionUserId(): string {
@@ -131,7 +148,7 @@ export function companionUserId(): string {
 export function getCompanion(): Companion | undefined {
   const stored = getGlobalConfig().companion
   if (!stored) return undefined
-  const { bones } = roll(companionUserId())
+  const { bones } = rollCompanionBones()
   // bones last so stale bones fields in old-format configs get overridden
   return { ...stored, ...bones }
 }

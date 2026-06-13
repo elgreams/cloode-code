@@ -73,6 +73,10 @@ export const SPECIES = [
 ] as const
 export type Species = (typeof SPECIES)[number] // biome-ignore format: keep compact
 
+export type CompanionOverride =
+  | { mode: 'selected'; selectedSpecies: Species }
+  | { mode: 'rerolled'; rerollSeed: string }
+
 export const EYES = ['·', '✦', '×', '◉', '@', '°'] as const
 export type Eye = (typeof EYES)[number]
 
