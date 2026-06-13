@@ -121,16 +121,24 @@ export function rollCompanionBones(): Roll {
   const config = getGlobalConfig()
   const userId = companionUserId()
   const override = config.companionOverride
+  let result: Roll
   if (override?.mode === 'selected') {
-    return rollWithSeed(
+    result = rollWithSeed(
       `${userId}:${SALT}:selected:${override.selectedSpecies}`,
       override.selectedSpecies,
     )
+  } else if (override?.mode === 'rerolled') {
+    result = rollWithSeed(`${userId}:${SALT}:rerolled:${override.rerollSeed}`)
+  } else {
+    result = roll(userId)
   }
-  if (override?.mode === 'rerolled') {
-    return rollWithSeed(`${userId}:${SALT}:rerolled:${override.rerollSeed}`)
+  if (config.companionShinyOverride !== undefined) {
+    return {
+      ...result,
+      bones: { ...result.bones, shiny: config.companionShinyOverride },
+    }
   }
-  return roll(userId)
+  return result
 }
 
 export function companionUserId(): string {

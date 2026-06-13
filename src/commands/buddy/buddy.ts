@@ -86,6 +86,13 @@ function overrideLabel(): string {
   return 'account default'
 }
 
+function shinyLabel(): string {
+  const override = getGlobalConfig().companionShinyOverride
+  if (override === true) return 'forced on'
+  if (override === false) return 'forced off'
+  return 'natural roll'
+}
+
 // A fenced text card: sprite art + name/rarity + stat bars + personality.
 function formatCard(
   name: string,
@@ -133,7 +140,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
 
   if (sub === 'cheat') {
     return say(
-      `Buddy cheat menu\n\nCurrent mode: **${overrideLabel()}**\n\nCommands:\n- \`/buddy list\` — show available species\n- \`/buddy select <species>\` — choose a companion species\n- \`/buddy reroll\` — roll a new deterministic companion\n- \`/buddy default\` — reset to account default\n- \`/buddy current\` — show current companion`,
+      `Buddy cheat menu\n\nCurrent mode: **${overrideLabel()}**\nShiny mode: **${shinyLabel()}**\n\nCommands:\n- \`/buddy list\` — show available species\n- \`/buddy select <species>\` — choose a companion species\n- \`/buddy reroll\` — roll a new deterministic companion\n- \`/buddy shiny\` — toggle shiny on/off\n- \`/buddy shiny reset\` — return to natural shiny roll\n- \`/buddy default\` — reset to account default\n- \`/buddy current\` — show current companion`,
     )
   }
 
@@ -174,6 +181,35 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     )
   }
 
+  if (sub === 'shiny') {
+    const normalized = restStr.toLowerCase()
+    let shinyOverride: boolean | undefined
+    if (normalized === '') {
+      shinyOverride = !rollCompanionBones().bones.shiny
+    } else if (normalized === 'on') {
+      shinyOverride = true
+    } else if (normalized === 'off') {
+      shinyOverride = false
+    } else if (normalized === 'reset') {
+      shinyOverride = undefined
+    } else {
+      return say('Usage: `/buddy shiny [on|off|reset]`')
+    }
+
+    saveGlobalConfig(c => ({ ...c, companionShinyOverride: shinyOverride }))
+    const companion = getCompanion()
+    if (!companion) {
+      return say('Shiny setting saved. Run `/buddy` to hatch a companion.')
+    }
+    const prefix =
+      shinyOverride === undefined
+        ? 'Reset shiny to natural roll.'
+        : `Shiny ${shinyOverride ? 'enabled' : 'disabled'}.`
+    return say(
+      `${prefix}\n\n${formatCard(companion.name, companion.personality, companion)}`,
+    )
+  }
+
   // Hatch when there's no companion yet and no (or an explicit "hatch") arg.
   if (!stored && (sub === '' || sub === 'hatch')) {
     const { soul, bones } = hatchCompanion()
@@ -196,7 +232,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       return say(formatCard(companion.name, companion.personality, companion))
     case 'current':
       return say(
-        `Current mode: **${overrideLabel()}**\n\n${formatCard(companion.name, companion.personality, companion)}`,
+        `Current mode: **${overrideLabel()}**\nShiny mode: **${shinyLabel()}**\n\n${formatCard(companion.name, companion.personality, companion)}`,
       )
     case 'pet':
       context.setAppState(s => ({ ...s, companionPetAt: Date.now() }))
@@ -226,7 +262,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       return say(`🔊 ${companion.name} is back.`)
     default:
       return say(
-        `Unknown subcommand "${sub}". Try: \`/buddy\` (show), \`pet\`, \`rename <name>\`, \`list\`, \`select <species>\`, \`reroll\`, \`default\`, \`release\`, \`mute\`, \`unmute\`.`,
+        `Unknown subcommand "${sub}". Try: \`/buddy\` (show), \`pet\`, \`rename <name>\`, \`list\`, \`select <species>\`, \`reroll\`, \`shiny\`, \`default\`, \`release\`, \`mute\`, \`unmute\`.`,
       )
   }
 }
