@@ -529,13 +529,33 @@ function getClaudeModelOptions(fastMode = false): ModelOption[] {
 // @[MODEL LAUNCH]: Add the new model ID to the appropriate family pattern below
 // so the "newer version available" hint works correctly.
 /**
+ * Compare two canonical model ids by their numeric version segments
+ * (e.g. "claude-opus-4-8" → [4, 8]). Returns true when `model` is an older
+ * version than `reference`. The [1m] context tag is ignored.
+ */
+function isOlderModelVersion(model: string, reference: string): boolean {
+  const parse = (s: string): number[] =>
+    (s.replace(/\[1m\]/gi, '').match(/\d+/g) ?? []).map(Number)
+  const a = parse(model)
+  const b = parse(reference)
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0
+    const y = b[i] ?? 0
+    if (x !== y) return x < y
+  }
+  return false
+}
+
+/**
  * Map a full model name to its family alias and the marketing name of the
- * version the alias currently resolves to. Used to detect when a user has
- * a specific older version pinned and a newer one is available.
+ * version the alias currently resolves to. `outdated` is true only when the
+ * pinned model is an older version than the alias's current target — frontier
+ * models newer than the default (e.g. Opus 4.8 vs the Opus alias's 4.6) are
+ * NOT outdated and must not be tagged for "downgrade."
  */
 function getModelFamilyInfo(
   model: string,
-): { alias: string; currentVersionName: string } | null {
+): { alias: string; currentVersionName: string; outdated: boolean } | null {
   const canonical = getCanonicalName(model)
 
   // Sonnet family
@@ -546,17 +566,27 @@ function getModelFamilyInfo(
     canonical.includes('claude-3-7-sonnet') ||
     canonical.includes('claude-3-5-sonnet')
   ) {
-    const currentName = getMarketingNameForModel(getDefaultSonnetModel())
+    const defaultModel = getDefaultSonnetModel()
+    const currentName = getMarketingNameForModel(defaultModel)
     if (currentName) {
-      return { alias: 'Sonnet', currentVersionName: currentName }
+      return {
+        alias: 'Sonnet',
+        currentVersionName: currentName,
+        outdated: isOlderModelVersion(canonical, getCanonicalName(defaultModel)),
+      }
     }
   }
 
   // Opus family
   if (canonical.includes('claude-opus-4')) {
-    const currentName = getMarketingNameForModel(getDefaultOpusModel())
+    const defaultModel = getDefaultOpusModel()
+    const currentName = getMarketingNameForModel(defaultModel)
     if (currentName) {
-      return { alias: 'Opus', currentVersionName: currentName }
+      return {
+        alias: 'Opus',
+        currentVersionName: currentName,
+        outdated: isOlderModelVersion(canonical, getCanonicalName(defaultModel)),
+      }
     }
   }
 
@@ -565,9 +595,14 @@ function getModelFamilyInfo(
     canonical.includes('claude-haiku') ||
     canonical.includes('claude-3-5-haiku')
   ) {
-    const currentName = getMarketingNameForModel(getDefaultHaikuModel())
+    const defaultModel = getDefaultHaikuModel()
+    const currentName = getMarketingNameForModel(defaultModel)
     if (currentName) {
-      return { alias: 'Haiku', currentVersionName: currentName }
+      return {
+        alias: 'Haiku',
+        currentVersionName: currentName,
+        outdated: isOlderModelVersion(canonical, getCanonicalName(defaultModel)),
+      }
     }
   }
 
@@ -592,8 +627,11 @@ function getKnownModelOption(model: string): ModelOption | null {
     }
   }
 
-  // Check if the alias currently resolves to a different (newer) version
-  if (marketingName !== familyInfo.currentVersionName) {
+  // Only flag "newer version available" when the pinned model is genuinely
+  // older than what the alias resolves to. Frontier models (e.g. Opus 4.8)
+  // are newer than the alias default (Opus 4.6) — tagging them as outdated
+  // wrongly told users to downgrade.
+  if (familyInfo.outdated && marketingName !== familyInfo.currentVersionName) {
     return {
       value: model,
       label: marketingName,
