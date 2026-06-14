@@ -35,33 +35,27 @@ const IDLE_SEQUENCE = [0, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 2, 0, 0, 0];
 const H = figures.heart;
 const PET_HEARTS = [`   ${H}    ${H}   `, `  ${H}  ${H}   ${H}  `, ` ${H}   ${H}  ${H}   `, `${H}  ${H}      ${H} `, '·    ·   ·  '];
 
-const shimmerFrameCache = new Map<string, React.ReactNode[]>();
-function getShimmerFrames(text: string, startIndex: number): React.ReactNode[] {
-  const key = `${startIndex}:${text}`;
-  const cached = shimmerFrameCache.get(key);
-  if (cached) return cached;
-
-  const chars = text.split('');
-  const frameCount = chars.length + 20;
-  const frames = Array.from({ length: frameCount }, (_, frame) => {
-    const glimmerIndex = frame - 10;
-    return <Text key={frame}>{chars.map((char, i) => {
-        const index = startIndex + i;
-        const shouldUseShimmer = index === glimmerIndex || Math.abs(index - glimmerIndex) === 1;
-        return <Text key={i} color={shouldUseShimmer ? getRainbowColor(index, true) : getRainbowColor(index)}>{char}</Text>;
-      })}</Text>;
-  });
-  shimmerFrameCache.set(key, frames);
-  return frames;
-}
+// Shimmer rebuilds per-char ANSI strings on every frame; at idle that churn
+// pegged RSS. Cache the rendered node per (line, startIndex, glimmerIndex) so a
+// given frame is built once and reused. glimmerIndex is shared across all sprite
+// lines (driven by the widest line), so the highlight sweeps the rows in sync.
+const shimmerFrameCache = new Map<string, React.ReactNode>();
 function ShinyText(t0) {
   const {
     text,
     startIndex,
-    frame
+    glimmerIndex
   } = t0;
-  const frames = getShimmerFrames(text, startIndex);
-  return frames[frame % frames.length];
+  const key = `${startIndex}:${glimmerIndex}:${text}`;
+  const cached = shimmerFrameCache.get(key);
+  if (cached) return cached;
+  const node = <Text>{text.split('').map((char, i) => {
+      const index = startIndex + i;
+      const shouldUseShimmer = index === glimmerIndex || Math.abs(index - glimmerIndex) === 1;
+      return <Text key={i} color={shouldUseShimmer ? getRainbowColor(index, true) : getRainbowColor(index)}>{char}</Text>;
+    })}</Text>;
+  shimmerFrameCache.set(key, node);
+  return node;
 }
 function wrap(text: string, width: number): string[] {
   const words = text.split(' ');
@@ -290,11 +284,11 @@ export function CompanionSprite(): React.ReactNode {
     const quip = reaction && reaction.length > NARROW_QUIP_CAP ? reaction.slice(0, NARROW_QUIP_CAP - 1) + '…' : reaction;
     const label = quip ? `"${quip}"` : focused ? ` ${companion.name} ` : companion.name;
     const face = renderFace(companion);
-    const shimmerFrame = Math.floor(shimmerTime / 50);
+    const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (face.length + 20);
     return <Box ref={shimmerRef} paddingX={1} alignSelf="flex-end">
         <Text>
           {petting && <Text color="autoAccept">{figures.heart} </Text>}
-          {companion.shiny ? <ShinyText text={face} startIndex={0} frame={shimmerFrame} /> : <Text bold color={color}>{face}</Text>}{' '}
+          {companion.shiny ? <ShinyText text={face} startIndex={0} glimmerIndex={glimmerIndex} /> : <Text bold color={color}>{face}</Text>}{' '}
           <Text italic dimColor={!focused && !reaction} bold={focused} inverse={focused && !reaction} color={reaction ? fading ? 'inactive' : color : focused ? color : undefined}>
             {label}
           </Text>
@@ -320,13 +314,14 @@ export function CompanionSprite(): React.ReactNode {
   const body = renderSprite(companion, spriteFrame).map(line => blink ? line.replaceAll(companion.eye, '-') : line);
   const sprite = heartFrame ? [heartFrame, ...body] : body;
 
-  const shimmerFrame = Math.floor(shimmerTime / 50);
+  const spriteLineWidth = Math.max(...sprite.map(line => line.length));
+  const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (spriteLineWidth + 20);
   const spriteLines = sprite.map((line, i) => {
     if (i === 0 && heartFrame) {
       return <Text key={i} color="autoAccept">{line}</Text>;
     }
     if (companion.shiny) {
-      return <ShinyText key={i} text={line} startIndex={0} frame={shimmerFrame} />;
+      return <ShinyText key={i} text={line} startIndex={0} glimmerIndex={glimmerIndex} />;
     }
     return <Text key={i} color={color}>{line}</Text>;
   });

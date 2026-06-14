@@ -191,6 +191,8 @@ type Props = {
 // Bottom slot has maxHeight="50%"; reserve lines for footer, border, status.
 const PROMPT_FOOTER_LINES = 5;
 const MIN_INPUT_VIEWPORT_LINES = 3;
+// Coalesce companion input-activity writes; the consumer only tracks minute-scale idleness.
+const COMPANION_INPUT_ACTIVITY_THROTTLE_MS = 30_000;
 function PromptInput({
   debug,
   ideSelection,
@@ -259,11 +261,20 @@ function PromptInput({
     setCursorOffset(input.length);
     lastInternalInputRef.current = input;
   }
-  // Wrap onInputChange to track internal changes before they trigger re-render
+  // Note when the user is actively typing so the companion can pause its idle
+  // shimmer after a long lull. Throttled to a state write at most once per
+  // window: keystrokes are hot, and the consumer only cares about minute-scale
+  // inactivity, so per-character setAppState (re-render + timer reset) is waste.
+  const lastInputActivityWriteRef = React.useRef(0);
   const markCompanionInputActivity = React.useCallback(() => {
+    const now = Date.now();
+    if (now - lastInputActivityWriteRef.current < COMPANION_INPUT_ACTIVITY_THROTTLE_MS) {
+      return;
+    }
+    lastInputActivityWriteRef.current = now;
     setAppState(prev => ({
       ...prev,
-      companionLastInputAt: Date.now()
+      companionLastInputAt: now
     }));
   }, [setAppState]);
   const trackAndSetInput = React.useCallback((value: string) => {
