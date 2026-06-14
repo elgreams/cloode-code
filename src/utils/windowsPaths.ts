@@ -110,10 +110,26 @@ export const findGitBashPath = memoize((): string => {
 
   const gitPath = findExecutable('git')
   if (gitPath) {
+    // Standard installer layout: Git\cmd\git.exe -> Git\bin\bash.exe.
     const bashPath = pathWin32.join(gitPath, '..', '..', 'bin', 'bash.exe')
     if (checkPathExists(bashPath)) {
       return bashPath
     }
+    // PortableGit / non-standard layouts keep git and bash together in the same
+    // dir (e.g. PortableGit\bin\{git.exe,bash.exe}), so the ../../bin derivation
+    // above misses. Try bash.exe alongside git.exe before giving up.
+    const siblingBash = pathWin32.join(gitPath, '..', 'bash.exe')
+    if (checkPathExists(siblingBash)) {
+      return siblingBash
+    }
+  }
+
+  // Last resort: ask the OS where bash is, exactly like a user running `bash`
+  // from their shell. The derivations above are layout-specific; this catches
+  // any install that simply put bash.exe on PATH (scoop, choco shims, manual).
+  const bashOnPath = findExecutable('bash')
+  if (bashOnPath && checkPathExists(bashOnPath)) {
+    return bashOnPath
   }
 
   // biome-ignore lint/suspicious/noConsole:: intentional console output
