@@ -92,6 +92,15 @@ if (-not $gitCmd) {
           if ($userPathGit -notlike "*$gitBin*") {
             [Environment]::SetEnvironmentVariable('Path', "$gitBin;$userPathGit", 'User')
           }
+          # The CLI derives bash.exe from git.exe assuming the standard installer
+          # layout (Git\cmd\git.exe -> Git\bin\bash.exe). PortableGit puts git and
+          # bash together in \bin, so that derivation misses. Point the CLI's
+          # explicit override at PortableGit's bash so it skips the derivation.
+          $bashExe = Join-Path $gitBin 'bash.exe'
+          if (Test-Path $bashExe) {
+            $env:CLAUDE_CODE_GIT_BASH_PATH = $bashExe
+            [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $bashExe, 'User')
+          }
           $gitCmd = Get-Command git -ErrorAction SilentlyContinue
         }
       }
