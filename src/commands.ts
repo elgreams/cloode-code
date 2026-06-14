@@ -13,6 +13,7 @@ import copy from './commands/copy/index.js'
 import desktop from './commands/desktop/index.js'
 import commitPushPr from './commands/commit-push-pr.js'
 import compact from './commands/compact/index.js'
+import dangerouslySkipPermissions from './commands/dangerously-skip-permissions/index.js'
 import config from './commands/config/index.js'
 import { context, contextNonInteractive } from './commands/context/index.js'
 import cost from './commands/cost/index.js'
@@ -270,6 +271,7 @@ const COMMANDS = memoize((): Command[] => [
   compact,
   config,
   copy,
+  dangerouslySkipPermissions,
   desktop,
   context,
   contextNonInteractive,

@@ -116,6 +116,35 @@ function groupSessionsByDir(sessions: SessionLike[]): {
   return groups;
 }
 
+// When the interactive browser resumes a session it re-execs the binary. We
+// forward the parent invocation's root flags (e.g. --dangerously-skip-permissions,
+// --model) so the resumed session keeps them — only the list-sessions subcommand
+// token and its own options are stripped. argv is process.argv.slice(2).
+const LIST_SESSIONS_OWN_FLAGS = new Set([
+  '-i',
+  '--interactive',
+  '--all',
+  '--json',
+]);
+function forwardableParentFlags(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    // Drop the subcommand token itself.
+    if (arg === 'list-sessions' || arg === 'sessions') continue;
+    // Drop this command's own boolean flags.
+    if (LIST_SESSIONS_OWN_FLAGS.has(arg)) continue;
+    // Drop --limit and its value.
+    if (arg === '--limit') {
+      i++; // skip the value too
+      continue;
+    }
+    if (arg.startsWith('--limit=')) continue;
+    out.push(arg);
+  }
+  return out;
+}
+
 export async function listSessionsHandler(options: {
   all?: boolean;
   json?: boolean;
@@ -188,9 +217,9 @@ export async function listSessionsHandler(options: {
       const entry = process.argv[1] ?? '';
       const isCompiled = entry.startsWith('/$bunfs/') || entry.includes('/$bunfs/') || entry.includes('\\~BUN\\');
       const bin = process.execPath;
-      const args = isCompiled
-        ? ['--resume', chosen.sessionId]
-        : [entry, '--resume', chosen.sessionId];
+      const passthrough = forwardableParentFlags(process.argv.slice(2));
+      const resumeArgs = [...passthrough, '--resume', chosen.sessionId];
+      const args = isCompiled ? resumeArgs : [entry, ...resumeArgs];
       const result = spawnSync(bin, args, {
         cwd: chosen.dir,
         stdio: 'inherit'
