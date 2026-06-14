@@ -86,24 +86,58 @@ export async function doctorHandler(root: Root): Promise<void> {
   process.exit(0);
 }
 
-// list-sessions handler — prints resumable sessions (id, dir, date, summary).
-// Non-interactive: plain stdout so it's pipeable/greppable. Defaults to the
-// current project (+ worktrees); --all spans every project.
+// list-sessions handler — lists resumable sessions grouped by directory.
+// Default: human-readable grouped text. --json: structured (pipeable).
+// --interactive: a two-level browser (dirs → sessions → resume).
+// Defaults to the current project (+ worktrees); --all spans every project.
+type SessionLike = import('../../utils/listSessionsImpl.js').SessionInfo;
+
+/** Group sessions by cwd, newest-first within each group and across groups. */
+function groupSessionsByDir(sessions: SessionLike[]): {
+  dir: string;
+  sessions: SessionLike[];
+  lastModified: number;
+}[] {
+  const byDir = new Map<string, SessionLike[]>();
+  for (const s of sessions) {
+    const dir = s.cwd ?? '(unknown directory)';
+    const arr = byDir.get(dir);
+    if (arr) arr.push(s);else byDir.set(dir, [s]);
+  }
+  const groups = [...byDir.entries()].map(([dir, list]) => {
+    list.sort((a, b) => b.lastModified - a.lastModified);
+    return {
+      dir,
+      sessions: list,
+      lastModified: Math.max(...list.map(s => s.lastModified))
+    };
+  });
+  groups.sort((a, b) => b.lastModified - a.lastModified);
+  return groups;
+}
+
 export async function listSessionsHandler(options: {
   all?: boolean;
   json?: boolean;
   limit?: string;
+  interactive?: boolean;
 }): Promise<void> {
-  logEvent('tengu_list_sessions_command', {});
+  logEvent('tengu_list_sessions_command', {
+    interactive: !!options.interactive
+  } as Record<string, unknown>);
   const { listSessionsImpl } = await import('../../utils/listSessionsImpl.js');
   const limit = options.limit ? Number(options.limit) : undefined;
   if (options.limit && (!Number.isInteger(limit) || (limit as number) <= 0)) {
     process.stderr.write('Error: --limit must be a positive integer\n');
     process.exit(1);
   }
+  // Interactive mode is a directory browser, so it always spans every project
+  // (like a file manager rooted at your sessions). Non-interactive defaults to
+  // the current project unless --all is given.
+  const scanAllProjects = options.all || options.interactive;
   const sessions = await listSessionsImpl({
-    dir: options.all ? undefined : cwd(),
-    limit,
+    dir: scanAllProjects ? undefined : cwd(),
+    limit
   });
 
   if (options.json) {
@@ -116,12 +150,72 @@ export async function listSessionsHandler(options: {
     process.exit(0);
   }
 
-  for (const s of sessions) {
-    const date = new Date(s.createdAt ?? s.lastModified).toISOString().replace('T', ' ').slice(0, 16);
-    const summary = (s.customTitle || s.summary || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-    const dir = s.cwd ?? '?';
-    process.stdout.write(`${s.sessionId}  ${date}  ${dir}\n    ${summary}\n`);
+  const chalk = (await import('chalk')).default;
+  const { formatRelativeTimeAgo } = await import('../../utils/format.js');
+  const now = new Date();
+  const formatAge = (epochMs: number) => formatRelativeTimeAgo(new Date(epochMs), { now });
+  const groups = groupSessionsByDir(sessions);
+
+  if (options.interactive) {
+    const { SessionBrowser } = await import('../../components/SessionBrowser.js');
+    const { createRoot } = await import('../../ink.js');
+    const { getBaseRenderOptions } = await import('../../utils/renderOptions.js');
+    const root = await createRoot(getBaseRenderOptions(false));
+    let chosen: { sessionId: string; dir: string } | undefined;
+    await new Promise<void>(resolve => {
+      root.render(<AppStateProvider onChangeAppState={onChangeAppState}>
+          <KeybindingSetup>
+            <SessionBrowser groups={groups} formatAge={formatAge} onResume={(session, dir) => {
+            chosen = { sessionId: session.sessionId, dir };
+            void resolve();
+          }} onExit={() => {
+            void resolve();
+          }} />
+          </KeybindingSetup>
+        </AppStateProvider>);
+    });
+    root.unmount();
+    if (chosen) {
+      // Re-exec ourselves with --resume in the chosen directory. Reuses all the
+      // existing resume machinery (cross-project, worktree, agent restore)
+      // instead of reimplementing session loading here.
+      const { spawnSync } = await import('child_process');
+      // Detect a compiled standalone binary by its Bun virtual entry path
+      // (/$bunfs/...). isInBundledMode() is unreliable here — it keys off
+      // Bun.embeddedFiles, which is empty unless ripgrep got embedded. When
+      // compiled, re-run the binary itself; in dev (bun running a .ts entry),
+      // pass the script path as argv[1] to the bun runtime.
+      const entry = process.argv[1] ?? '';
+      const isCompiled = entry.startsWith('/$bunfs/') || entry.includes('/$bunfs/') || entry.includes('\\~BUN\\');
+      const bin = process.execPath;
+      const args = isCompiled
+        ? ['--resume', chosen.sessionId]
+        : [entry, '--resume', chosen.sessionId];
+      const result = spawnSync(bin, args, {
+        cwd: chosen.dir,
+        stdio: 'inherit'
+      });
+      process.exit(result.status ?? 0);
+    }
+    process.exit(0);
   }
+
+  // Grouped, human-readable text output.
+  const out: string[] = [];
+  for (const group of groups) {
+    const count = group.sessions.length;
+    out.push(chalk.bold.cyan(group.dir) + chalk.dim(`  (${count} session${count === 1 ? '' : 's'})`));
+    for (const s of group.sessions) {
+      const age = formatAge(s.createdAt ?? s.lastModified).padEnd(9);
+      const branch = s.gitBranch ? chalk.green(s.gitBranch) + ' ' : '';
+      const summary = (s.customTitle || s.summary || s.firstPrompt || '(no summary)').replace(/\s+/g, ' ').trim().slice(0, 72);
+      out.push(`  ${chalk.dim(age)} ${branch}${summary}`);
+      out.push(`  ${' '.repeat(9)} ${chalk.dim(s.sessionId)}`);
+    }
+    out.push('');
+  }
+  out.push(chalk.dim(`Resume with: claude --resume <id>` + (options.interactive ? '' : '   (or run with -i to browse interactively)')));
+  process.stdout.write(out.join('\n') + '\n');
   process.exit(0);
 }
 

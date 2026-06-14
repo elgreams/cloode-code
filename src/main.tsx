@@ -4422,8 +4422,9 @@ async function run(): Promise<CommanderCommand> {
   });
 
   // claude list-sessions
-  program.command('list-sessions').alias('sessions').description('List resumable sessions (id, directory, date, summary). Defaults to the current project; use --all for every project. Resume one with `claude --resume <id>`.').option('--all', 'List sessions across all projects, not just the current directory').option('--json', 'Output as JSON').option('--limit <n>', 'Maximum number of sessions to list').action(async (options: {
+  program.command('list-sessions').alias('sessions').description('List resumable sessions grouped by directory. Defaults to the current project; use --all for every project. Use -i to browse interactively, or resume directly with `claude --resume <id>`.').option('--all', 'List sessions across all projects, not just the current directory').option('-i, --interactive', 'Browse sessions interactively: pick a directory, then a session to resume').option('--json', 'Output as JSON').option('--limit <n>', 'Maximum number of sessions to list').action(async (options: {
     all?: boolean;
+    interactive?: boolean;
     json?: boolean;
     limit?: string;
   }) => {
