@@ -43,9 +43,33 @@ Info "Starting installation..."
 Write-Host ""
 
 # ---- system checks -------------------------------------------------------
+# git provides both the clone below AND bash.exe, which the built CLI uses at
+# runtime as its default shell. So git is required for install AND for the app
+# to work afterwards. If it's missing, try winget (in-box on Win10 1809+/11);
+# fall back to the manual download link only if winget is absent or fails.
 $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 if (-not $gitCmd) {
-  Fail "git is not installed. Install Git for Windows: https://git-scm.com/download/win"
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($winget) {
+    Info "git not found. Installing Git for Windows via winget..."
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements 2>&1 | Out-Host
+    $ErrorActionPreference = $prev
+    # winget installs to a well-known location but doesn't refresh this running
+    # session's PATH. Re-probe PATH, then fall back to the default install dir.
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $gitCmd) {
+      $gitExe = Join-Path $env:ProgramFiles 'Git\cmd\git.exe'
+      if (Test-Path $gitExe) {
+        $env:Path = "$(Split-Path $gitExe);$env:Path"
+        $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+      }
+    }
+  }
+  if (-not $gitCmd) {
+    Fail "git is not installed and could not be installed automatically. Install Git for Windows: https://git-scm.com/download/win then re-run this installer."
+  }
 }
 # Capture git's full path now and call it explicitly later: Bun's installer
 # (run via iex below) rewrites $env:Path from the registry, which can drop a
