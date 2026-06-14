@@ -77,8 +77,12 @@ if (Test-Path $InstallDir) {
   Warn "$InstallDir already exists"
   if (Test-Path (Join-Path $InstallDir '.git')) {
     Info "Pulling latest changes..."
-    & $Git -C $InstallDir pull --ff-only origin main 2>$null
-    if ($LASTEXITCODE -ne 0) { Warn "Pull failed, continuing with existing copy" }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $Git -C $InstallDir pull --ff-only origin main 2>&1 | Out-Host
+    $pullExit = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    if ($pullExit -ne 0) { Warn "Pull failed, continuing with existing copy" }
   }
 } else {
   Info "Cloning repository..."
@@ -108,14 +112,18 @@ Ok "Binary built: $Exe"
 # ---- put `free-code` on PATH (a .cmd shim, so rebuilds are picked up) -----
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 $Shim = Join-Path $BinDir 'free-code.cmd'
-Set-Content -Path $Shim -Value "@echo off`r`n`"$Exe`" %*" -Encoding Ascii
+$ShimContent = @"
+@echo off
+"$Exe" %*
+"@
+Set-Content -Path $Shim -Value $ShimContent -Encoding Ascii
 Ok "Shim: $Shim"
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if ($userPath -notlike "*$BinDir*") {
   [Environment]::SetEnvironmentVariable('Path', "$BinDir;$userPath", 'User')
   $env:Path = "$BinDir;$env:Path"
-  Warn "Added $BinDir to your user PATH — restart your terminal for it to take effect."
+  Warn "Added $BinDir to your user PATH - restart your terminal for it to take effect."
 }
 
 # ---- done ----------------------------------------------------------------
