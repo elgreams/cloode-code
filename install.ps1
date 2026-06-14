@@ -92,15 +92,6 @@ if (-not $gitCmd) {
           if ($userPathGit -notlike "*$gitBin*") {
             [Environment]::SetEnvironmentVariable('Path', "$gitBin;$userPathGit", 'User')
           }
-          # The CLI derives bash.exe from git.exe assuming the standard installer
-          # layout (Git\cmd\git.exe -> Git\bin\bash.exe). PortableGit puts git and
-          # bash together in \bin, so that derivation misses. Point the CLI's
-          # explicit override at PortableGit's bash so it skips the derivation.
-          $bashExe = Join-Path $gitBin 'bash.exe'
-          if (Test-Path $bashExe) {
-            $env:CLAUDE_CODE_GIT_BASH_PATH = $bashExe
-            [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $bashExe, 'User')
-          }
           $gitCmd = Get-Command git -ErrorAction SilentlyContinue
         }
       }
@@ -117,6 +108,31 @@ if (-not $gitCmd) {
 # git entry that only lived on the session PATH — breaking a later `git clone`.
 $Git = $gitCmd.Source
 Ok "git: $(& $Git --version)"
+
+# Point the CLI at bash.exe explicitly. The CLI otherwise derives bash from
+# git's path assuming the standard layout (Git\cmd\git.exe -> Git\bin\bash.exe),
+# which misses non-standard installs like PortableGit (git and bash together in
+# \bin). We do this for EVERY run (not just fresh PortableGit installs) so a
+# re-run on a machine with git already present still gets bash wired up. Resolve
+# bash relative to the git we found, then fall back to bash on PATH.
+$BashExe = $null
+foreach ($cand in @(
+    (Join-Path (Split-Path (Split-Path $Git)) 'bin\bash.exe'),  # Git\cmd\git.exe -> Git\bin\bash.exe
+    (Join-Path (Split-Path $Git) 'bash.exe')                    # PortableGit\bin\{git,bash}.exe
+  )) {
+  if (Test-Path $cand) { $BashExe = $cand; break }
+}
+if (-not $BashExe) {
+  $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+  if ($bashCmd) { $BashExe = $bashCmd.Source }
+}
+if ($BashExe) {
+  $env:CLAUDE_CODE_GIT_BASH_PATH = $BashExe
+  [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $BashExe, 'User')
+  Ok "bash: $BashExe"
+} else {
+  Warn "Could not locate bash.exe next to git. If the CLI reports git-bash missing, set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe."
+}
 
 $bunOk = $false
 if (Get-Command bun -ErrorAction SilentlyContinue) {
