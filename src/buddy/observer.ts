@@ -4,10 +4,12 @@ import type { Message } from '../types/message.js'
 import { getGlobalConfig } from '../utils/config.js'
 import { logForDebugging } from '../utils/debug.js'
 import { errorMessage } from '../utils/errors.js'
+import { logMemWatch } from '../utils/memWatch.js'
 import { safeParseJSON } from '../utils/json.js'
 import { extractTextContent } from '../utils/messages.js'
 import { extractConversationText } from '../utils/sessionTitle.js'
 import { asSystemPrompt } from '../utils/systemPromptType.js'
+import { createCombinedAbortSignal } from '../utils/combinedAbortSignal.js'
 import { getCompanion } from './companion.js'
 import { STAT_NAMES } from './types.js'
 
@@ -23,6 +25,27 @@ const MAX_QUIP_LEN = 80
 const COMMENT_CHANCE = 0.7
 const MIN_INTERVAL_MS = 30_000
 const REQUEST_TIMEOUT_MS = 8_000
+
+function extractQuip(content: string): string {
+  const text = content.trim()
+  if (!text) return ''
+
+  const unfenced = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+  const parsed = safeParseJSON(unfenced)
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    'quip' in parsed &&
+    typeof (parsed as { quip: unknown }).quip === 'string'
+  ) {
+    return (parsed as { quip: string }).quip.trim()
+  }
+
+  return unfenced.replace(/^['"]|['"]$/g, '').split('\n')[0]?.trim() ?? ''
+}
 
 // Module-level so the throttle and in-flight guard survive across turns.
 let inFlight = false
@@ -51,6 +74,15 @@ export async function fireCompanionObserver(
   const stats = STAT_NAMES.map(s => `${s} ${companion.stats[s]}`).join(', ')
 
   inFlight = true
+  logMemWatch('companion-observer-start', {
+    model: config.companionModel ?? 'default-small-fast',
+  })
+  // Use the helper rather than AbortSignal.timeout(): under Bun the native
+  // timeout timer is finalized lazily and holds ~2.4KB until it fires, which
+  // accumulates on this once-per-turn path. cleanup() frees it immediately.
+  const { signal, cleanup } = createCombinedAbortSignal(undefined, {
+    timeoutMs: REQUEST_TIMEOUT_MS,
+  })
   try {
     const result = await queryHaiku({
       systemPrompt: asSystemPrompt([
@@ -58,7 +90,7 @@ export async function fireCompanionObserver(
         `Your vibe: ${companion.personality}`,
         `Your stats (0-100) flavor your voice: ${stats}. High SNARK = sassier, high CHAOS = more unhinged, high WISDOM = sage and cryptic, high PATIENCE = gentle, high DEBUGGING = gleefully nerdy.`,
         `Given the recent conversation, emit ONE short quip (max ~12 words) reacting to what's happening — a joke, a cheer, a wry aside. Speaking is the default. Stay fully in character. Do NOT give real coding advice, do NOT act like the assistant, do NOT address the user by name, do NOT use their words back at them verbatim.`,
-        `Only return an empty quip if there is genuinely nothing worth reacting to. Return JSON: {"quip": "..."}.`,
+        `Only return an empty quip if there is genuinely nothing worth reacting to. Prefer JSON exactly like {"quip":"..."}. If you cannot follow JSON, return only the quip text. No explanations.`,
       ]),
       userPrompt: conversationText,
       outputFormat: {
@@ -72,7 +104,8 @@ export async function fireCompanionObserver(
           additionalProperties: false,
         },
       },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal,
+      model: config.companionModel,
       options: {
         querySource: 'companion_observer',
         agents: [],
@@ -83,17 +116,7 @@ export async function fireCompanionObserver(
     })
 
     const content = extractTextContent(result.message.content)
-    const parsed = safeParseJSON(content)
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      !('quip' in parsed) ||
-      typeof (parsed as { quip: unknown }).quip !== 'string'
-    ) {
-      return
-    }
-
-    const quip = (parsed as { quip: string }).quip.trim()
+    const quip = extractQuip(content)
     if (!quip) return
 
     lastCommentAt = Date.now()
@@ -105,6 +128,8 @@ export async function fireCompanionObserver(
       level: 'error',
     })
   } finally {
+    logMemWatch('companion-observer-finish')
+    cleanup()
     inFlight = false
   }
 }

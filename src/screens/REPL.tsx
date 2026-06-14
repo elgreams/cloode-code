@@ -32,6 +32,7 @@ import { createFileStateCacheWithSizeLimit, mergeFileStateCaches, READ_FILE_STAT
 import { updateLastInteractionTime, getLastInteractionTime, getOriginalCwd, getProjectRoot, getSessionId, switchSession, setCostStateForRestore, getTurnHookDurationMs, getTurnHookCount, resetTurnHookDuration, getTurnToolDurationMs, getTurnToolCount, resetTurnToolDuration, getTurnClassifierDurationMs, getTurnClassifierCount, resetTurnClassifierDuration } from '../bootstrap/state.js';
 import { asSessionId, asAgentId } from '../types/ids.js';
 import { logForDebugging } from '../utils/debug.js';
+import { logMemWatch, startMemWatchSampler } from '../utils/memWatch.js';
 import { QueryGuard } from '../utils/QueryGuard.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
 import { formatTokens, truncateToWidth } from '../utils/format.js';
@@ -614,7 +615,12 @@ export function REPL({
   // Log REPL mount/unmount lifecycle
   useEffect(() => {
     logForDebugging(`[REPL:mount] REPL mounted, disabled=${disabled}`);
-    return () => logForDebugging(`[REPL:unmount] REPL unmounting`);
+    startMemWatchSampler();
+    logMemWatch('repl-mount', { disabled });
+    return () => {
+      logMemWatch('repl-unmount');
+      logForDebugging(`[REPL:unmount] REPL unmounting`);
+    };
   }, [disabled]);
 
   // Agent definition is state so /resume can update it mid-session
@@ -2878,6 +2884,16 @@ export function REPL({
       // (e.g. expanded skill content, tick prompts) that should not be
       // replayed as user-visible text.
       newMessages.filter((m): m is UserMessage => m.type === 'user' && !m.isMeta).map(_ => getContentText(_.message.content)).filter(_ => _ !== null).forEach((msg, i) => {
+        // [slash-route] A query was already running when this submit landed, so
+        // the message text is re-enqueued. If that text is a slash command, the
+        // post-turn drain re-routes it through processSlashCommand — but this is
+        // the idle/background-query race worth watching. Dormant unless
+        // --debug=slash-route.
+        if (msg.trim().startsWith('/')) {
+          logForDebugging(`[slash-route] concurrent onQuery re-enqueued '${msg.slice(0, 40)}' (queryGuard was busy)`, {
+            level: 'info'
+          });
+        }
         enqueue({
           value: msg,
           mode: 'prompt'
@@ -2888,6 +2904,12 @@ export function REPL({
       });
       return;
     }
+    logMemWatch('query-start', {
+      source: getQuerySourceForREPL(),
+      shouldQuery,
+      newMessages: newMessages.length,
+      model: mainLoopModelParam,
+    });
     try {
       // isLoading is derived from queryGuard — tryStart() above already
       // transitioned dispatching→running, so no setter call needed here.
@@ -2921,6 +2943,10 @@ export function REPL({
       }
       await onQueryImpl(latestMessages, newMessages, abortController, shouldQuery, additionalAllowedTools, mainLoopModelParam, effort);
     } finally {
+      logMemWatch('query-finish', {
+        aborted: abortController.signal.aborted,
+        reason: typeof abortController.signal.reason === 'string' ? abortController.signal.reason : '',
+      });
       // queryGuard.end() atomically checks generation and transitions
       // running→idle. Returns false if a newer query owns the guard
       // (cancel+resubmit race where the stale finally fires as a microtask).

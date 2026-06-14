@@ -1096,6 +1096,24 @@ function PromptInput({
       return;
     }
 
+    // [slash-route] Input-boundary probe for intermittent slash-command
+    // misroutes. The dispatcher probes only see inputs that still start with
+    // '/', so this catches the remaining class: a slash being dropped before
+    // submit. Dormant unless --debug=slash-route.
+    {
+      const trimmed = inputParam.trim();
+      const firstWord = trimmed.split(/\s+/, 1)[0];
+      if (trimmed.startsWith('/') || firstWord === 'buddy' || firstWord === 'provider') {
+        logForDebugging(
+          `[slash-route] PromptInput submit '${trimmed.slice(0, 40)}' ` +
+            `(startsWithSlash=${String(trimmed.startsWith('/'))}, ` +
+            `suggestions=${suggestionsState.suggestions.length}, ` +
+            `isSubmittingSlashCommand=${String(isSubmittingSlashCommand)})`,
+          { level: 'info' },
+        );
+      }
+    }
+
     // Normal leader submission
     await onSubmitProp(inputParam, {
       setCursorOffset,

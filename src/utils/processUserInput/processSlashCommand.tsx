@@ -344,6 +344,15 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
       logEvent('tengu_input_slash_invalid', {
         input: commandName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
+      // [slash-route] '/x' looked like a command but wasn't in the registry at
+      // this instant → "Unknown skill" (NOT sent to model). If a command you
+      // know exists (e.g. /buddy, /provider) lands here, the registry snapshot
+      // was missing it when you submitted. Dormant unless --debug=slash-route.
+      logForDebugging(
+        `[slash-route] '/${commandName}' looked like a command but is not registered ` +
+          `(registrySize=${context.options.commands.length}) → Unknown skill`,
+        { level: 'info' },
+      );
       const unknownMessage = `Unknown skill: ${commandName}`;
       return {
         messages: [createSyntheticUserCaveatMessage(), ...attachmentMessages, createUserMessage({
@@ -359,6 +368,17 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
         resultText: unknownMessage
       };
     }
+    // [slash-route] Reached only when a '/'-prefixed input is NOT a known
+    // command AND doesn't look like one (or resolves to a real path) — so it's
+    // forwarded to the model as a plain prompt. A registered command (e.g.
+    // /buddy, /provider) landing here means context.options.commands was
+    // missing it at this instant. Dormant unless --debug=slash-route.
+    logForDebugging(
+      `[slash-route] '/${commandName}' not recognized → sending to model ` +
+        `(registrySize=${context.options.commands.length}, ` +
+        `looksLikeCommand=${looksLikeCommand(commandName)}, isFilePath=${isFilePath})`,
+      { level: 'info' },
+    );
     const promptId = randomUUID();
     setPromptId(promptId);
     logEvent('tengu_input_prompt', {});

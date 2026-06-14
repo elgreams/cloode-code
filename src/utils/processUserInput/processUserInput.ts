@@ -37,6 +37,7 @@ import {
 } from '../attachments.js'
 import type { PastedContent } from '../config.js'
 import type { EffortValue } from '../effort.js'
+import { logForDebugging } from '../debug.js'
 import { toArray } from '../generators.js'
 import {
   executeUserPromptSubmitHooks,
@@ -525,6 +526,24 @@ async function processUserInputBase(
         setToolJSX,
       ),
       imageMetadataTexts,
+    )
+  }
+
+  // [slash-route] A '/'-prefixed input only reaches the model when the slash
+  // branch is skipped because effectiveSkipSlash is set. For local typed input
+  // that should never happen — this fires only for bridge/CCR/MCP origins, or
+  // if skip leaks onto a keyboard submission (the reported misroute). Dormant
+  // unless --debug; filter with --debug=slash-route.
+  if (
+    inputString !== null &&
+    effectiveSkipSlash &&
+    inputString.startsWith('/')
+  ) {
+    logForDebugging(
+      `[slash-route] '${inputString.slice(0, 40)}' bypassing slash dispatch → model ` +
+        `(effectiveSkipSlash=true, skipSlashCommands=${String(skipSlashCommands)}, ` +
+        `bridgeOrigin=${String(bridgeOrigin)}, querySource=${querySource})`,
+      { level: 'info' },
     )
   }
 

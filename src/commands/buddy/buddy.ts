@@ -1,4 +1,5 @@
 import { feature } from 'bun:bundle'
+import * as React from 'react'
 import { randomBytes } from 'crypto'
 import {
   getCompanion,
@@ -14,8 +15,12 @@ import {
   type Species,
   type StoredCompanion,
 } from '../../buddy/types.js'
+import { Select, type OptionWithDescription } from '../../components/CustomSelect/index.js'
+import { Box, Text } from '../../ink.js'
 import type { LocalJSXCommandCall } from '../../types/command.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import { getSmallFastModel, modelDisplayString } from '../../utils/model/model.js'
+import { getModelOptions } from '../../utils/model/modelOptions.js'
 
 // Deterministic soul (name + personality) generated at hatch from the bones'
 // inspiration seed, so a given user always hatches the same characterful
@@ -94,6 +99,75 @@ function shinyLabel(): string {
   return 'natural roll'
 }
 
+function buddyModelLabel(): string {
+  const model = getGlobalConfig().companionModel
+  return model ? `override (${model})` : `default small-fast (${getSmallFastModel()})`
+}
+
+const DEFAULT_BUDDY_MODEL = '__DEFAULT_BUDDY_MODEL__'
+
+type BuddyModelPickerValue = string
+
+function BuddyModelPicker({
+  onDone,
+}: {
+  onDone: (result?: string, options?: { display?: 'system' | 'skip' }) => void
+}): React.ReactNode {
+  const current = getGlobalConfig().companionModel
+  const defaultModel = getSmallFastModel()
+  const options: OptionWithDescription<BuddyModelPickerValue>[] = [
+    {
+      value: DEFAULT_BUDDY_MODEL,
+      label: 'Default small-fast',
+      description: defaultModel,
+    },
+    ...getModelOptions(false)
+      .filter(option => option.value !== null)
+      .map(option => ({
+        value: option.value as string,
+        label: option.label,
+        description: option.description,
+      })),
+  ]
+  const defaultValue = current ?? DEFAULT_BUDDY_MODEL
+  const defaultFocusValue = options.some(option => option.value === defaultValue)
+    ? defaultValue
+    : DEFAULT_BUDDY_MODEL
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    React.createElement(
+      Box,
+      { marginBottom: 1, flexDirection: 'column' },
+      React.createElement(Text, { color: 'remember', bold: true }, 'Select buddy model'),
+      React.createElement(
+        Text,
+        { dimColor: true },
+        'Only companion quips use this model. Main chat model is unchanged.',
+      ),
+    ),
+    React.createElement(Select<BuddyModelPickerValue>, {
+      defaultValue,
+      defaultFocusValue,
+      options,
+      visibleOptionCount: Math.min(10, options.length),
+      onCancel: () => {
+        onDone(`Kept buddy model as ${buddyModelLabel()}`, { display: 'system' })
+      },
+      onChange: value => {
+        if (value === DEFAULT_BUDDY_MODEL) {
+          saveGlobalConfig(c => ({ ...c, companionModel: undefined }))
+          onDone(`Buddy model reset to default small-fast (${defaultModel}).`)
+          return
+        }
+        saveGlobalConfig(c => ({ ...c, companionModel: value }))
+        onDone(`Buddy model set to ${modelDisplayString(value)}. Main chat model unchanged.`)
+      },
+    }),
+  )
+}
+
 function normalizeSaveLabel(label: string): string {
   return label.trim().replace(/\s+/g, ' ').slice(0, 32)
 }
@@ -165,7 +239,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
 
   if (sub === 'cheat') {
     return say(
-      `Buddy cheat menu\n\nCurrent mode: **${overrideLabel()}**\nShiny mode: **${shinyLabel()}**\n\nCommands:\n- \`/buddy list\` — show available species\n- \`/buddy select <species>\` — choose a companion species\n- \`/buddy reroll\` — roll a new deterministic companion\n- \`/buddy save [name]\` — save the current companion\n- \`/buddy saved\` — list saved companions\n- \`/buddy load <name|id>\` — restore a saved companion\n- \`/buddy delete <name|id>\` — delete a saved companion\n- \`/buddy shiny\` — toggle shiny on/off\n- \`/buddy shiny reset\` — return to natural shiny roll\n- \`/buddy default\` — reset to account default\n- \`/buddy current\` — show current companion`,
+      `Buddy cheat menu\n\nCurrent mode: **${overrideLabel()}**\nShiny mode: **${shinyLabel()}**\nBuddy model: **${buddyModelLabel()}**\n\nCommands:\n- \`/buddy list\` — show available species\n- \`/buddy select <species>\` — choose a companion species\n- \`/buddy reroll\` — roll a new deterministic companion\n- \`/buddy save [name]\` — save the current companion\n- \`/buddy saved\` — list saved companions\n- \`/buddy load <name|id>\` — restore a saved companion\n- \`/buddy delete <name|id>\` — delete a saved companion\n- \`/buddy shiny\` — toggle shiny on/off\n- \`/buddy shiny reset\` — return to natural shiny roll\n- \`/buddy model [model|default]\` — set the model used for companion quips\n- \`/buddy default\` — reset to account default\n- \`/buddy current\` — show current companion`,
     )
   }
 
@@ -233,6 +307,19 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     return say(
       `${prefix}\n\n${formatCard(companion.name, companion.personality, companion)}`,
     )
+  }
+
+  if (sub === 'model') {
+    const model = restStr.trim()
+    if (!model) {
+      return React.createElement(BuddyModelPicker, { onDone })
+    }
+    if (model.toLowerCase() === 'default' || model.toLowerCase() === 'reset') {
+      saveGlobalConfig(c => ({ ...c, companionModel: undefined }))
+      return say(`Buddy model reset to **default small-fast (${getSmallFastModel()})**.`)
+    }
+    saveGlobalConfig(c => ({ ...c, companionModel: model }))
+    return say(`Buddy model set to **${model}**. Main chat model unchanged.`)
   }
 
   if (sub === 'saved' || sub === 'saves') {
@@ -317,7 +404,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       return say(formatCard(companion.name, companion.personality, companion))
     case 'current':
       return say(
-        `Current mode: **${overrideLabel()}**\nShiny mode: **${shinyLabel()}**\n\n${formatCard(companion.name, companion.personality, companion)}`,
+        `Current mode: **${overrideLabel()}**\nShiny mode: **${shinyLabel()}**\nBuddy model: **${buddyModelLabel()}**\n\n${formatCard(companion.name, companion.personality, companion)}`,
       )
     case 'pet':
       context.setAppState(s => ({ ...s, companionPetAt: Date.now() }))
@@ -347,7 +434,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       return say(`🔊 ${companion.name} is back.`)
     default:
       return say(
-        `Unknown subcommand "${sub}". Try: \`/buddy\` (show), \`pet\`, \`rename <name>\`, \`save [name]\`, \`saved\`, \`load <name|id>\`, \`delete <name|id>\`, \`list\`, \`select <species>\`, \`reroll\`, \`shiny\`, \`default\`, \`release\`, \`mute\`, \`unmute\`.`,
+        `Unknown subcommand "${sub}". Try: \`/buddy\` (show), \`pet\`, \`rename <name>\`, \`save [name]\`, \`saved\`, \`load <name|id>\`, \`delete <name|id>\`, \`list\`, \`select <species>\`, \`reroll\`, \`shiny\`, \`model\`, \`default\`, \`release\`, \`mute\`, \`unmute\`.`,
       )
   }
 }

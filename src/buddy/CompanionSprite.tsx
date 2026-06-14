@@ -16,6 +16,12 @@ import { getCompanion } from './companion.js';
 import { renderFace, renderSprite, spriteFrameCount } from './sprites.js';
 import { RARITY_COLORS } from './types.js';
 const TICK_MS = 500;
+// Shimmer re-renders the sprite on every frame, allocating fresh per-char ANSI
+// strings each time. At 20fps idle this churn pegged RSS (the runtime allocator
+// never returns the freed pages to the OS). Run full-speed only while the user
+// is interacting; idle at a lower rate so it still visibly shimmers far cheaper.
+const SHIMMER_FAST_MS = 50; // 20fps — smooth, while focused/speaking
+const SHIMMER_IDLE_MS = 125; // ~8fps — still moving, ~60% fewer re-renders
 const BUBBLE_SHOW = 20; // ticks → ~10s at 500ms
 const FADE_WINDOW = 6; // last ~3s the bubble dims so you know it's about to go
 const PET_BURST_MS = 2500; // how long hearts float after /buddy pet
@@ -192,7 +198,6 @@ export function CompanionSprite(): React.ReactNode {
   const {
     columns
   } = useTerminalSize();
-  const [shimmerRef, shimmerTime] = useAnimationFrame(50);
   const [tick, setTick] = useState(0);
   const lastSpokeTick = useRef(0);
   // Sync-during-render (not useEffect) so the first post-pet render already
@@ -210,6 +215,15 @@ export function CompanionSprite(): React.ReactNode {
       forPetAt: petAt
     });
   }
+  // Only shiny companions actually draw the shimmer; for everyone else the
+  // animation produced an identical frame 20×/sec — pure churn. Pass null to
+  // pause the clock entirely. While shiny, run fast only when the user is
+  // interacting (speaking/focused/petting); idle uses a slower, cheaper rate.
+  const companion = getCompanion();
+  const isPetting = petAt !== undefined && (tick - petStartTick) * TICK_MS < PET_BURST_MS;
+  const interacting = reaction !== undefined || focused || isPetting;
+  const shimmerInterval = companion?.shiny ? interacting ? SHIMMER_FAST_MS : SHIMMER_IDLE_MS : null;
+  const [shimmerRef, shimmerTime] = useAnimationFrame(shimmerInterval);
   useEffect(() => {
     const timer = setInterval(setT => setT((t: number) => t + 1), TICK_MS, setTick);
     return () => clearInterval(timer);
@@ -225,7 +239,6 @@ export function CompanionSprite(): React.ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tick intentionally captured at reaction-change, not tracked
   }, [reaction, setAppState]);
   if (!feature('BUDDY')) return null;
-  const companion = getCompanion();
   if (!companion || getGlobalConfig().companionMuted) return null;
   const color = RARITY_COLORS[companion.rarity];
   const colWidth = spriteColWidth(stringWidth(companion.name));

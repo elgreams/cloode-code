@@ -2204,42 +2204,50 @@ export function normalizeMessagesForAPI(
           // like 'caller' from tool_use blocks, as these are only valid with the
           // tool search beta header
           const toolSearchEnabled = isToolSearchEnabledOptimistic()
+          const content = message.message.content.flatMap(block => {
+            if (isEmptyThinkingBlock(block)) {
+              return []
+            }
+            if (block.type === 'tool_use') {
+              const tool = tools.find(t => toolMatchesName(t, block.name))
+              const normalizedInput = tool
+                ? normalizeToolInputForAPI(
+                    tool,
+                    block.input as Record<string, unknown>,
+                  )
+                : block.input
+              const canonicalName = tool?.name ?? block.name
+
+              // When tool search is enabled, preserve all fields including 'caller'
+              if (toolSearchEnabled) {
+                return [
+                  {
+                    ...block,
+                    name: canonicalName,
+                    input: normalizedInput,
+                  },
+                ]
+              }
+
+              // When tool search is NOT enabled, explicitly construct tool_use
+              // block with only standard API fields to avoid sending fields like
+              // 'caller' that may be stored in sessions from tool search runs
+              return [
+                {
+                  type: 'tool_use' as const,
+                  id: block.id,
+                  name: canonicalName,
+                  input: normalizedInput,
+                },
+              ]
+            }
+            return [block]
+          })
           const normalizedMessage: AssistantMessage = {
             ...message,
             message: {
               ...message.message,
-              content: message.message.content.map(block => {
-                if (block.type === 'tool_use') {
-                  const tool = tools.find(t => toolMatchesName(t, block.name))
-                  const normalizedInput = tool
-                    ? normalizeToolInputForAPI(
-                        tool,
-                        block.input as Record<string, unknown>,
-                      )
-                    : block.input
-                  const canonicalName = tool?.name ?? block.name
-
-                  // When tool search is enabled, preserve all fields including 'caller'
-                  if (toolSearchEnabled) {
-                    return {
-                      ...block,
-                      name: canonicalName,
-                      input: normalizedInput,
-                    }
-                  }
-
-                  // When tool search is NOT enabled, explicitly construct tool_use
-                  // block with only standard API fields to avoid sending fields like
-                  // 'caller' that may be stored in sessions from tool search runs
-                  return {
-                    type: 'tool_use' as const,
-                    id: block.id,
-                    name: canonicalName,
-                    input: normalizedInput,
-                  }
-                }
-                return block
-              }),
+              content,
             },
           }
 
@@ -4772,6 +4780,17 @@ function isThinkingBlock(
   block: ContentBlockParam | ContentBlock | BetaContentBlock,
 ): block is ThinkingBlockType {
   return block.type === 'thinking' || block.type === 'redacted_thinking'
+}
+
+function isEmptyThinkingBlock(
+  block: ContentBlockParam | ContentBlock | BetaContentBlock,
+): boolean {
+  return (
+    block.type === 'thinking' &&
+    (!('thinking' in block) ||
+      typeof block.thinking !== 'string' ||
+      block.thinking.length === 0)
+  )
 }
 
 /**

@@ -4,7 +4,7 @@ const buddy = {
   type: 'local-jsx',
   name: 'buddy',
   description: 'Your terminal companion — hatch it, pet it, name it',
-  argumentHint: '[pet | rename <name> | list | select <species> | reroll | shiny [on|off|reset] | default | release | mute | unmute]',
+  argumentHint: '[pet | rename <name> | list | select <species> | reroll | shiny [on|off|reset] | model [model|default] | default | release | mute | unmute]',
   load: () => import('./buddy.js'),
 } satisfies Command
 
