@@ -67,6 +67,38 @@ if (-not $gitCmd) {
       }
     }
   }
+  # Fallback: PortableGit — the no-admin, no-winget build of Git for Windows.
+  # It's a 7-Zip self-extractor we unpack into the user profile, so it needs no
+  # elevation. The built CLI locates bash via a PATH lookup (Shell.ts), so a
+  # portable install works fine as long as its bin dir is on PATH — which we
+  # both set for this session and persist for future terminals.
+  if (-not $gitCmd) {
+    try {
+      Info "git not found. Downloading PortableGit (no admin required)..."
+      $ProgressPreference = 'SilentlyContinue'
+      $rel = Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent' = 'free-code-installer' }
+      $asset = $rel.assets | Where-Object { $_.name -match 'PortableGit-.*-64-bit\.7z\.exe$' } | Select-Object -First 1
+      if ($asset) {
+        $sfx = Join-Path $env:TEMP $asset.name
+        Invoke-WebRequest $asset.browser_download_url -OutFile $sfx
+        $gitRoot = Join-Path $HOME 'PortableGit'
+        Info "Extracting PortableGit to $gitRoot ..."
+        # 7-Zip SFX flags: -o<dir> sets the target, -y auto-confirms (silent).
+        & $sfx -o"$gitRoot" -y | Out-Null
+        $gitBin = Join-Path $gitRoot 'bin'
+        if (Test-Path (Join-Path $gitBin 'git.exe')) {
+          $env:Path = "$gitBin;$env:Path"
+          $userPathGit = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ($userPathGit -notlike "*$gitBin*") {
+            [Environment]::SetEnvironmentVariable('Path', "$gitBin;$userPathGit", 'User')
+          }
+          $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+        }
+      }
+    } catch {
+      Warn "PortableGit install failed: $($_.Exception.Message)"
+    }
+  }
   if (-not $gitCmd) {
     Fail "git is not installed and could not be installed automatically. Install Git for Windows: https://git-scm.com/download/win then re-run this installer."
   }
