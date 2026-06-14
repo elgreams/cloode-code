@@ -169,6 +169,8 @@ export type AppState = DeepImmutable<{
   companionReaction?: string
   // Timestamp of last /buddy pet — CompanionSprite renders hearts while recent
   companionPetAt?: number
+  // Timestamp of last prompt/input activity — CompanionSprite pauses idle shimmer after inactivity
+  companionLastInputAt: number
   // TODO (ashwin): see if we can use utility-types DeepReadonly for this
   mcp: {
     clients: MCPServerConnection[]
@@ -469,6 +471,7 @@ export function getDefaultAppState(): AppState {
     settings: getInitialSettings(),
     tasks: {},
     agentNameRegistry: new Map(),
+    companionLastInputAt: Date.now(),
     verbose: false,
     mainLoopModel: null, // alias, full name (as with --model or env var), or null (default)
     mainLoopModelForSession: null,

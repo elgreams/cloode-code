@@ -250,6 +250,7 @@ function PromptInput({
     show: false
   });
   const [cursorOffset, setCursorOffset] = useState<number>(input.length);
+  const setAppState = useSetAppState();
   // Track the last input value set via internal handlers so we can detect
   // external input changes (e.g. speech-to-text injection) and move cursor to end.
   const lastInternalInputRef = React.useRef(input);
@@ -259,10 +260,20 @@ function PromptInput({
     lastInternalInputRef.current = input;
   }
   // Wrap onInputChange to track internal changes before they trigger re-render
+  const markCompanionInputActivity = React.useCallback(() => {
+    setAppState(prev => ({
+      ...prev,
+      companionLastInputAt: Date.now()
+    }));
+  }, [setAppState]);
   const trackAndSetInput = React.useCallback((value: string) => {
     lastInternalInputRef.current = value;
+    markCompanionInputActivity();
     onInputChange(value);
-  }, [onInputChange]);
+  }, [markCompanionInputActivity, onInputChange]);
+  useEffect(() => {
+    markCompanionInputActivity();
+  }, [markCompanionInputActivity, submitCount]);
   // Expose an insertText function so callers (e.g. STT) can splice text at the
   // current cursor position instead of replacing the entire input.
   if (insertTextRef) {
@@ -273,18 +284,19 @@ function PromptInput({
         const insertText = needsSpace ? ' ' + text : text;
         const newValue = input.slice(0, cursorOffset) + insertText + input.slice(cursorOffset);
         lastInternalInputRef.current = newValue;
+        markCompanionInputActivity();
         onInputChange(newValue);
         setCursorOffset(cursorOffset + insertText.length);
       },
       setInputWithCursor: (value: string, cursor: number) => {
         lastInternalInputRef.current = value;
+        markCompanionInputActivity();
         onInputChange(value);
         setCursorOffset(cursor);
       }
     };
   }
   const store = useAppStateStore();
-  const setAppState = useSetAppState();
   const tasks = useAppState(s => s.tasks);
   const replBridgeConnected = useAppState(s => s.replBridgeConnected);
   const replBridgeExplicit = useAppState(s => s.replBridgeExplicit);

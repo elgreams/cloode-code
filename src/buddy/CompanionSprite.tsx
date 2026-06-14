@@ -2,10 +2,10 @@ import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import figures from 'figures';
 import React, { useEffect, useRef, useState } from 'react';
-import { ShimmerChar } from '../components/Spinner/ShimmerChar.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { stringWidth } from '../ink/stringWidth.js';
 import { Box, Text, useAnimationFrame } from '../ink.js';
+import TerminalFocusContext from '../ink/components/TerminalFocusContext.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
 import type { AppState } from '../state/AppStateStore.js';
 import { getGlobalConfig } from '../utils/config.js';
@@ -22,6 +22,7 @@ const TICK_MS = 500;
 // is interacting; idle at a lower rate so it still visibly shimmers far cheaper.
 const SHIMMER_FAST_MS = 50; // 20fps — smooth, while focused/speaking
 const SHIMMER_IDLE_MS = 125; // ~8fps — still moving, ~60% fewer re-renders
+const SHIMMER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const BUBBLE_SHOW = 20; // ticks → ~10s at 500ms
 const FADE_WINDOW = 6; // last ~3s the bubble dims so you know it's about to go
 const PET_BURST_MS = 2500; // how long hearts float after /buddy pet
@@ -34,13 +35,33 @@ const IDLE_SEQUENCE = [0, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 2, 0, 0, 0];
 const H = figures.heart;
 const PET_HEARTS = [`   ${H}    ${H}   `, `  ${H}  ${H}   ${H}  `, ` ${H}   ${H}  ${H}   `, `${H}  ${H}      ${H} `, '·    ·   ·  '];
 
+const shimmerFrameCache = new Map<string, React.ReactNode[]>();
+function getShimmerFrames(text: string, startIndex: number): React.ReactNode[] {
+  const key = `${startIndex}:${text}`;
+  const cached = shimmerFrameCache.get(key);
+  if (cached) return cached;
+
+  const chars = text.split('');
+  const frameCount = chars.length + 20;
+  const frames = Array.from({ length: frameCount }, (_, frame) => {
+    const glimmerIndex = frame - 10;
+    return <Text key={frame}>{chars.map((char, i) => {
+        const index = startIndex + i;
+        const shouldUseShimmer = index === glimmerIndex || Math.abs(index - glimmerIndex) === 1;
+        return <Text key={i} color={shouldUseShimmer ? getRainbowColor(index, true) : getRainbowColor(index)}>{char}</Text>;
+      })}</Text>;
+  });
+  shimmerFrameCache.set(key, frames);
+  return frames;
+}
 function ShinyText(t0) {
   const {
     text,
     startIndex,
-    glimmerIndex
+    frame
   } = t0;
-  return <Text>{text.split('').map((char, i) => <ShimmerChar key={i} char={char} index={startIndex + i} glimmerIndex={glimmerIndex} messageColor={getRainbowColor(startIndex + i)} shimmerColor={getRainbowColor(startIndex + i, true)} />)}</Text>;
+  const frames = getShimmerFrames(text, startIndex);
+  return frames[frame % frames.length];
 }
 function wrap(text: string, width: number): string[] {
   const words = text.split(' ');
@@ -193,7 +214,9 @@ export function companionReservedColumns(terminalColumns: number, speaking: bool
 export function CompanionSprite(): React.ReactNode {
   const reaction = useAppState(s => s.companionReaction);
   const petAt = useAppState(s => s.companionPetAt);
+  const lastInputAt = useAppState(s => s.companionLastInputAt);
   const focused = useAppState(s => s.footerSelection === 'companion');
+  const { isTerminalFocused } = React.useContext(TerminalFocusContext);
   const setAppState = useSetAppState();
   const {
     columns
@@ -215,14 +238,28 @@ export function CompanionSprite(): React.ReactNode {
       forPetAt: petAt
     });
   }
+  const [inputRecentlyActive, setInputRecentlyActive] = useState(() => Date.now() - lastInputAt < SHIMMER_IDLE_TIMEOUT_MS);
+  useEffect(() => {
+    const remaining = SHIMMER_IDLE_TIMEOUT_MS - (Date.now() - lastInputAt);
+    if (remaining <= 0) {
+      setInputRecentlyActive(false);
+      return;
+    }
+    setInputRecentlyActive(true);
+    const timer = setTimeout(setActive => setActive(false), remaining, setInputRecentlyActive);
+    return () => clearTimeout(timer);
+  }, [lastInputAt]);
   // Only shiny companions actually draw the shimmer; for everyone else the
   // animation produced an identical frame 20×/sec — pure churn. Pass null to
   // pause the clock entirely. While shiny, run fast only when the user is
   // interacting (speaking/focused/petting); idle uses a slower, cheaper rate.
+  // If the terminal reports blur, pause shimmer until focus returns. If the
+  // prompt has been inactive for a while, pause idle shimmer until input resumes.
   const companion = getCompanion();
   const isPetting = petAt !== undefined && (tick - petStartTick) * TICK_MS < PET_BURST_MS;
   const interacting = reaction !== undefined || focused || isPetting;
-  const shimmerInterval = companion?.shiny ? interacting ? SHIMMER_FAST_MS : SHIMMER_IDLE_MS : null;
+  const shouldIdleShimmer = inputRecentlyActive || interacting;
+  const shimmerInterval = companion?.shiny && isTerminalFocused && shouldIdleShimmer ? interacting ? SHIMMER_FAST_MS : SHIMMER_IDLE_MS : null;
   const [shimmerRef, shimmerTime] = useAnimationFrame(shimmerInterval);
   useEffect(() => {
     const timer = setInterval(setT => setT((t: number) => t + 1), TICK_MS, setTick);
@@ -253,11 +290,11 @@ export function CompanionSprite(): React.ReactNode {
     const quip = reaction && reaction.length > NARROW_QUIP_CAP ? reaction.slice(0, NARROW_QUIP_CAP - 1) + '…' : reaction;
     const label = quip ? `"${quip}"` : focused ? ` ${companion.name} ` : companion.name;
     const face = renderFace(companion);
-    const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (face.length + 20);
+    const shimmerFrame = Math.floor(shimmerTime / 50);
     return <Box ref={shimmerRef} paddingX={1} alignSelf="flex-end">
         <Text>
           {petting && <Text color="autoAccept">{figures.heart} </Text>}
-          {companion.shiny ? <ShinyText text={face} startIndex={0} glimmerIndex={glimmerIndex} /> : <Text bold color={color}>{face}</Text>}{' '}
+          {companion.shiny ? <ShinyText text={face} startIndex={0} frame={shimmerFrame} /> : <Text bold color={color}>{face}</Text>}{' '}
           <Text italic dimColor={!focused && !reaction} bold={focused} inverse={focused && !reaction} color={reaction ? fading ? 'inactive' : color : focused ? color : undefined}>
             {label}
           </Text>
@@ -283,14 +320,13 @@ export function CompanionSprite(): React.ReactNode {
   const body = renderSprite(companion, spriteFrame).map(line => blink ? line.replaceAll(companion.eye, '-') : line);
   const sprite = heartFrame ? [heartFrame, ...body] : body;
 
-  const spriteLineWidth = Math.max(...sprite.map(line => line.length));
-  const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (spriteLineWidth + 20);
+  const shimmerFrame = Math.floor(shimmerTime / 50);
   const spriteLines = sprite.map((line, i) => {
     if (i === 0 && heartFrame) {
       return <Text key={i} color="autoAccept">{line}</Text>;
     }
     if (companion.shiny) {
-      return <ShinyText key={i} text={line} startIndex={0} glimmerIndex={glimmerIndex} />;
+      return <ShinyText key={i} text={line} startIndex={0} frame={shimmerFrame} />;
     }
     return <Text key={i} color={color}>{line}</Text>;
   });
