@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/elgreams/free-code/main/install.sh 
 irm https://raw.githubusercontent.com/elgreams/free-code/main/install.ps1 | iex
 ```
 
-Each installer checks your system, installs [Bun](https://bun.sh) if needed, clones the repo, builds with all experimental features enabled, and puts `free-code` on your PATH (a symlink on macOS/Linux, a `free-code.cmd` shim on Windows). You'll need [git](https://git-scm.com/downloads) installed first.
+Each installer checks your system, installs [Bun](https://bun.sh) if needed, clones the repo, builds with all experimental features enabled, and puts `free-code` on your PATH (a symlink on macOS/Linux, a `free-code.cmd` shim on Windows). On macOS/Linux you'll need [git](https://git-scm.com/downloads) installed first; on Windows the installer auto-installs git for you (via winget, or a no-admin PortableGit fallback) and wires up the bash path the binary needs at runtime.
 
 Then run `free-code` and use the `/login` command to authenticate with your preferred model provider.
 
@@ -285,6 +285,33 @@ bun run dev
 ./cli /login
 ```
 
+### Session Management
+
+Conversations are saved to disk and can be resumed later.
+
+```bash
+# Continue the most recent conversation in the current directory
+./cli --continue            # or -c
+
+# Resume a specific session by ID
+./cli --resume <session-id>
+
+# Open the interactive resume picker (optionally with a search term)
+./cli --resume
+
+# List resumable sessions, grouped by directory, with dates + summaries
+./cli sessions              # current project (+ worktrees); --all for every project
+./cli sessions --json       # structured output for scripts/pipes
+./cli sessions --limit 20
+
+# Browse sessions interactively across all projects: pick a directory,
+# then a session, and it resumes right there
+./cli sessions -i
+```
+
+> `sessions` is an alias for `list-sessions`. The interactive browser (`-i`)
+> always spans every project, like a file manager rooted at your sessions.
+
 ### Environment Variables Reference
 
 | Variable | Purpose |
@@ -331,6 +358,7 @@ Run `/help` in the REPL for the full command list. free-code keeps all of Claude
 |---|---|
 | `/provider` | Add OpenAI-compatible endpoints (NIM, OpenRouter, vLLM, …) — see [Model Providers](#model-providers) |
 | `/browser` | Drive your installed Chrome over CDP — see [Browser Automation](#browser-automation) |
+| `sessions` (CLI) | List/browse resumable sessions across projects — see [Session Management](#session-management) |
 | `/color` | Recolor the startup banner border + the Clawd figure (`/color cyan`, `/color #ff8800`, `/color reset`) |
 | `/buddy` | Hatch a terminal companion (the April Fools easter egg) — `pet`, `rename`, `release`, `mute` |
 
