@@ -17,7 +17,12 @@ $BunMin     = '1.3.11'
 function Info($m) { Write-Host "[*] $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "[+] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "[!] $m" -ForegroundColor Yellow }
-function Fail($m) { Write-Host "[x] $m" -ForegroundColor Red; exit 1 }
+# Use throw, not `exit`: this script is run via `irm ... | iex`, so it executes
+# in the caller's session. `exit` there terminates the whole PowerShell host —
+# closing the window before the user can read the error. `throw` aborts the
+# script but leaves the interactive session (and the message) intact, and still
+# yields exit code 1 when run as a file via `powershell -File`.
+function Fail($m) { Write-Host "[x] $m" -ForegroundColor Red; throw $m }
 
 function Test-VersionGte($have, $want) {
   try { return [version]$have -ge [version]$want } catch { return $false }
