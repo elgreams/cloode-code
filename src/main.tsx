@@ -4421,6 +4421,18 @@ async function run(): Promise<CommanderCommand> {
     await installHandler(target, options);
   });
 
+  // claude list-sessions
+  program.command('list-sessions').alias('sessions').description('List resumable sessions (id, directory, date, summary). Defaults to the current project; use --all for every project. Resume one with `claude --resume <id>`.').option('--all', 'List sessions across all projects, not just the current directory').option('--json', 'Output as JSON').option('--limit <n>', 'Maximum number of sessions to list').action(async (options: {
+    all?: boolean;
+    json?: boolean;
+    limit?: string;
+  }) => {
+    const {
+      listSessionsHandler
+    } = await import('./cli/handlers/util.js');
+    await listSessionsHandler(options);
+  });
+
   // ant-only commands
   if ("external" === 'ant') {
     const validateLogId = (value: string) => {

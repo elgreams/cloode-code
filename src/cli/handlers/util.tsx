@@ -86,6 +86,45 @@ export async function doctorHandler(root: Root): Promise<void> {
   process.exit(0);
 }
 
+// list-sessions handler — prints resumable sessions (id, dir, date, summary).
+// Non-interactive: plain stdout so it's pipeable/greppable. Defaults to the
+// current project (+ worktrees); --all spans every project.
+export async function listSessionsHandler(options: {
+  all?: boolean;
+  json?: boolean;
+  limit?: string;
+}): Promise<void> {
+  logEvent('tengu_list_sessions_command', {});
+  const { listSessionsImpl } = await import('../../utils/listSessionsImpl.js');
+  const limit = options.limit ? Number(options.limit) : undefined;
+  if (options.limit && (!Number.isInteger(limit) || (limit as number) <= 0)) {
+    process.stderr.write('Error: --limit must be a positive integer\n');
+    process.exit(1);
+  }
+  const sessions = await listSessionsImpl({
+    dir: options.all ? undefined : cwd(),
+    limit,
+  });
+
+  if (options.json) {
+    process.stdout.write(JSON.stringify(sessions, null, 2) + '\n');
+    process.exit(0);
+  }
+
+  if (sessions.length === 0) {
+    process.stderr.write('No sessions found.\n');
+    process.exit(0);
+  }
+
+  for (const s of sessions) {
+    const date = new Date(s.createdAt ?? s.lastModified).toISOString().replace('T', ' ').slice(0, 16);
+    const summary = (s.customTitle || s.summary || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const dir = s.cwd ?? '?';
+    process.stdout.write(`${s.sessionId}  ${date}  ${dir}\n    ${summary}\n`);
+  }
+  process.exit(0);
+}
+
 // install handler
 export async function installHandler(target: string | undefined, options: {
   force?: boolean;
