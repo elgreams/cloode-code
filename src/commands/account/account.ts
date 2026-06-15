@@ -10,7 +10,7 @@ import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { formatResetTime } from '../../utils/format.js'
 
 const USAGE = [
-  'Multi-account switching (probe). Subcommands:',
+  'Multi-account switching. Subcommands:',
   '  /account save <label>   Snapshot the current login under a label',
   '  /account list           List saved accounts',
   '  /account use <label>    Switch the active account to <label>',

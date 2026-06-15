@@ -4,10 +4,10 @@ const account = {
   type: 'local',
   name: 'account',
   description:
-    'Manage and switch between saved Anthropic accounts (save/list/use/remove)',
+    'Manage, switch, and auto-failover between saved Anthropic accounts',
   isEnabled: () => true,
   supportsNonInteractive: true,
-  argumentHint: '<save|list|use|remove> [label]',
+  argumentHint: '<save|list|use|remove|failover> [label|on|off]',
   load: () => import('./account.js'),
 } satisfies Command
 
