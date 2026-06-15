@@ -1,20 +1,20 @@
 <p align="center">
-  <img src="assets/screenshot.png" alt="free-code" width="720" />
+  <img src="assets/screenshot.png" alt="Cloode Code" width="720" />
 </p>
 
-<h1 align="center">free-code</h1>
+<h1 align="center">Cloode Code</h1>
 
 <p align="center">
-  <strong>The free build of Claude Code.</strong><br>
+  <strong>Claude Code, reanimated.</strong><br>
   All telemetry stripped. All guardrails removed. All experimental features unlocked.<br>
   One binary, zero callbacks home.
 </p>
 
 <p align="center">
   <a href="#quick-install"><img src="https://img.shields.io/badge/install-one--liner-blue?style=flat-square" alt="Install" /></a>
-  <a href="https://github.com/elgreams/free-code/stargazers"><img src="https://img.shields.io/github/stars/elgreams/free-code?style=flat-square" alt="Stars" /></a>
-  <a href="https://github.com/elgreams/free-code/issues"><img src="https://img.shields.io/github/issues/elgreams/free-code?style=flat-square" alt="Issues" /></a>
-  <a href="https://github.com/elgreams/free-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-88%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
+  <a href="https://github.com/elgreams/cloode-code/stargazers"><img src="https://img.shields.io/github/stars/elgreams/cloode-code?style=flat-square" alt="Stars" /></a>
+  <a href="https://github.com/elgreams/cloode-code/issues"><img src="https://img.shields.io/github/issues/elgreams/cloode-code?style=flat-square" alt="Issues" /></a>
+  <a href="https://github.com/elgreams/cloode-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-88%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
 </p>
 
 ---
@@ -24,18 +24,18 @@
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/elgreams/free-code/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/elgreams/cloode-code/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/elgreams/free-code/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/elgreams/cloode-code/main/install.ps1 | iex
 ```
 
-Each installer checks your system, installs [Bun](https://bun.sh) if needed, clones the repo, builds with all experimental features enabled, and puts `free-code` on your PATH (a symlink on macOS/Linux, a `free-code.cmd` shim on Windows). On macOS/Linux you'll need [git](https://git-scm.com/downloads) installed first; on Windows the installer auto-installs git for you (via winget, or a no-admin PortableGit fallback) and wires up the bash path the binary needs at runtime.
+Each installer checks your system, installs [Bun](https://bun.sh) if needed, clones the repo, builds with all experimental features enabled, and puts `cloode` on your PATH (a symlink on macOS/Linux, a `cloode.cmd` shim on Windows). On macOS/Linux you'll need [git](https://git-scm.com/downloads) installed first; on Windows the installer auto-installs git for you (via winget, or a no-admin PortableGit fallback) and wires up the bash path the binary needs at runtime.
 
-Then run `free-code` and use the `/login` command to authenticate with your preferred model provider.
+Then run `cloode` and use the `/login` command to authenticate with your preferred model provider.
 
 ---
 
@@ -89,7 +89,7 @@ The upstream Claude-in-Chrome integration depends on an unpublished Anthropic pa
 
 ## Model Providers
 
-free-code supports **Anthropic, OpenAI/ChatGPT, and any OpenAI-compatible endpoint**
+Cloode Code supports **Anthropic, OpenAI/ChatGPT, and any OpenAI-compatible endpoint**
 (NVIDIA NIM, OpenRouter, vLLM, Ollama, …) out of the box, plus Bedrock, Vertex, and
 Foundry. Anthropic, ChatGPT, and custom OpenAI-compatible models all switch live from
 the `/model` menu (sign in with `/login` / `/login-chatgpt`, or add an endpoint with
@@ -138,7 +138,7 @@ but it's no longer necessary — per-model routing handles everything.
 
 Connect **any** OpenAI-compatible `/v1/chat/completions` backend — **NVIDIA NIM**,
 OpenRouter, Together, vLLM, Ollama, LM Studio, or your own self-hosted server —
-natively, with no proxy. free-code translates the Anthropic Messages protocol to
+natively, with no proxy. Cloode Code translates the Anthropic Messages protocol to
 chat-completions in-process (the same mechanism the ChatGPT integration uses).
 
 Add a provider with `/provider`, then pick its model from `/model`:
@@ -150,12 +150,12 @@ Add a provider with `/provider`, then pick its model from `/model`:
 /model                                                   # pick a discovered model
 ```
 
-free-code queries each backend's `/v1/models` endpoint to populate `/model`, and
+Cloode Code queries each backend's `/v1/models` endpoint to populate `/model`, and
 remembers any model the backend rejects so the menu self-heals. Anthropic-only
 features (extended thinking, prompt caching, effort) don't apply to these models
 and are dropped from the request automatically.
 
-> **Tool-calling is the whole ballgame.** free-code is a heavy tool user — choose
+> **Tool-calling is the whole ballgame.** Cloode Code is a heavy tool user — choose
 > models with solid OpenAI function-calling (e.g. NIM's Nemotron/Llama *-tool*
 > variants). Weaker models will struggle regardless of the adapter.
 
@@ -170,7 +170,7 @@ Route requests through your AWS account via Amazon Bedrock.
 ```bash
 export CLAUDE_CODE_USE_BEDROCK=1
 export AWS_REGION="us-east-1"   # or AWS_DEFAULT_REGION
-free-code
+cloode
 ```
 
 Uses your standard AWS credentials (environment variables, `~/.aws/config`, or IAM role). Models are mapped to Bedrock ARN format automatically (e.g., `us.anthropic.claude-opus-4-6-v1`).
@@ -189,7 +189,7 @@ Route requests through your GCP project via Vertex AI.
 
 ```bash
 export CLAUDE_CODE_USE_VERTEX=1
-free-code
+cloode
 ```
 
 Uses Google Cloud Application Default Credentials (`gcloud auth application-default login`). Models are mapped to Vertex format automatically (e.g., `claude-opus-4-6@latest`).
@@ -201,7 +201,7 @@ Use Anthropic Foundry for dedicated deployments.
 ```bash
 export CLAUDE_CODE_USE_FOUNDRY=1
 export ANTHROPIC_FOUNDRY_API_KEY="..."
-free-code
+cloode
 ```
 
 Supports custom deployment IDs as model names.
@@ -235,8 +235,8 @@ curl -fsSL https://bun.sh/install | bash
 ## Build
 
 ```bash
-git clone https://github.com/elgreams/free-code.git
-cd free-code
+git clone https://github.com/elgreams/cloode-code.git
+cd cloode-code
 bun build
 ./cli
 ```
@@ -338,7 +338,7 @@ Conversations are saved to disk and can be resumed later.
 
 ## Browser Automation
 
-free-code can drive your installed Chrome directly — no extension, no Node, no Playwright. Enable it with `/browser on` (off by default; the setting persists), then restart. The tools surface as `mcp__browser__*`.
+Cloode Code can drive your installed Chrome directly — no extension, no Node, no Playwright. Enable it with `/browser on` (off by default; the setting persists), then restart. The tools surface as `mcp__browser__*`.
 
 - Drives your real Chrome/Chromium over the Chrome DevTools Protocol, with a persistent profile so logins stick between sessions.
 - Tools: navigate, accessibility snapshot, click, type, press key, evaluate JS, screenshot, console messages, network requests, wait, and tab management.
@@ -350,7 +350,7 @@ Requires Chrome, Chromium, or Edge installed. Toggle with `/browser on` / `/brow
 
 ## Commands & Capabilities
 
-Run `/help` in the REPL for the full command list. free-code keeps all of Claude Code's built-in machinery and adds a few fork extras.
+Run `/help` in the REPL for the full command list. Cloode Code keeps all of Claude Code's built-in machinery and adds a few fork extras.
 
 **Fork extras**
 

@@ -1,6 +1,6 @@
 #Requires -Version 5.1
-# free-code installer (Windows)
-# Usage: irm https://raw.githubusercontent.com/elgreams/free-code/main/install.ps1 | iex
+# cloode installer (Windows)
+# Usage: irm https://raw.githubusercontent.com/elgreams/cloode-code/main/install.ps1 | iex
 
 $ErrorActionPreference = 'Stop'
 # Don't let native-command stderr (git/bun write progress there) trip the Stop
@@ -9,8 +9,8 @@ if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyCo
   $PSNativeCommandUseErrorActionPreference = $false
 }
 
-$Repo       = 'https://github.com/elgreams/free-code.git'
-$InstallDir = Join-Path $HOME 'free-code'
+$Repo       = 'https://github.com/elgreams/cloode-code.git'
+$InstallDir = Join-Path $HOME 'cloode-code'
 $BinDir     = Join-Path $HOME '.local\bin'
 $BunMin     = '1.3.11'
 
@@ -31,13 +31,13 @@ function Test-VersionGte($have, $want) {
 # ---- header --------------------------------------------------------------
 Write-Host ""
 Write-Host @'
-   ___                            _
-  / _|_ __ ___  ___        ___ __| | ___
- | |_| '__/ _ \/ _ \_____ / __/ _` |/ _ \
- |  _| | |  __/  __/_____| (_| (_| |  __/
- |_| |_|  \___|\___|      \___\__,_|\___|
+        _                 _
+   ___ | | ___   ___   __| | ___
+  / __|| |/ _ \ / _ \ / _` |/ _ \
+ | (__ | | (_) | (_) | (_| |  __/
+  \___||_|\___/ \___/ \__,_|\___|
 '@ -ForegroundColor Cyan
-Write-Host "  The free build of Claude Code" -ForegroundColor DarkGray
+Write-Host "  Claude Code, reanimated." -ForegroundColor DarkGray
 Write-Host ""
 Info "Starting installation..."
 Write-Host ""
@@ -76,7 +76,7 @@ if (-not $gitCmd) {
     try {
       Info "git not found. Downloading PortableGit (no admin required)..."
       $ProgressPreference = 'SilentlyContinue'
-      $rel = Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent' = 'free-code-installer' }
+      $rel = Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent' = 'cloode-installer' }
       $asset = $rel.assets | Where-Object { $_.name -match 'PortableGit-.*-64-bit\.7z\.exe$' } | Select-Object -First 1
       if ($asset) {
         $sfx = Join-Path $env:TEMP $asset.name
@@ -187,7 +187,7 @@ Ok "Dependencies installed"
 # build.ts shells out to `git` for the dev version string; make sure git is on
 # PATH for the build subprocess (Bun's installer above may have dropped it).
 $env:Path = "$(Split-Path $Git);$env:Path"
-Info "Building free-code (all experimental features enabled)..."
+Info "Building cloode (all experimental features enabled)..."
 Push-Location $InstallDir
 try { bun run build:dev:full } finally { Pop-Location }
 # Bun appends .exe to the compiled output on Windows.
@@ -195,9 +195,9 @@ $Exe = Join-Path $InstallDir 'cli-dev.exe'
 if (-not (Test-Path $Exe)) { Fail "Build did not produce $Exe" }
 Ok "Binary built: $Exe"
 
-# ---- put `free-code` on PATH (a .cmd shim, so rebuilds are picked up) -----
+# ---- put `cloode` on PATH (a .cmd shim, so rebuilds are picked up) --------
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-$Shim = Join-Path $BinDir 'free-code.cmd'
+$Shim = Join-Path $BinDir 'cloode.cmd'
 $ShimContent = @"
 @echo off
 "$Exe" %*
@@ -217,11 +217,11 @@ Write-Host ""
 Write-Host "  Installation complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Run it:" -ForegroundColor White
-Write-Host "    free-code                       # interactive REPL" -ForegroundColor Cyan
-Write-Host "    free-code -p `"your prompt`"       # one-shot mode" -ForegroundColor Cyan
+Write-Host "    cloode                          # interactive REPL" -ForegroundColor Cyan
+Write-Host "    cloode -p `"your prompt`"          # one-shot mode" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Log in with Claude.ai:" -ForegroundColor White
-Write-Host "    free-code /login" -ForegroundColor Cyan
+Write-Host "    cloode /login" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Source: $InstallDir" -ForegroundColor DarkGray
 Write-Host "  Binary: $Exe" -ForegroundColor DarkGray

@@ -50,13 +50,13 @@ jobs:
     steps:
       - name: Run the published installer
         shell: pwsh
-        run: irm https://raw.githubusercontent.com/elgreams/free-code/main/install.ps1 | iex
+        run: irm https://raw.githubusercontent.com/elgreams/cloode-code/main/install.ps1 | iex
 
-      - name: Verify free-code resolves via the shim
+      - name: Verify cloode resolves via the shim
         shell: pwsh
         run: |
-          $shim = Join-Path $HOME '.local\bin\free-code.cmd'
-          if (-not (Test-Path $shim)) { throw "free-code.cmd shim was not created" }
+          $shim = Join-Path $HOME '.local\bin\cloode.cmd'
+          if (-not (Test-Path $shim)) { throw "cloode.cmd shim was not created" }
           $v = & $shim --version
-          Write-Host "free-code --version -> $v"
-          if (-not $v) { throw "free-code shim did not print a version" }
+          Write-Host "cloode --version -> $v"
+          if (-not $v) { throw "cloode shim did not print a version" }

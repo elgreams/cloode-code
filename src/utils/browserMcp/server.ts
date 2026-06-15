@@ -13,7 +13,7 @@ import { BROWSER_TOOLS, dispatchTool } from './tools.js'
  * Subprocess entrypoint for `--browser-mcp`. A self-contained MCP server that
  * drives the user's installed Chrome over the DevTools Protocol using the
  * runtime's native WebSocket — no Node, no npx, no Playwright. Spawned by the
- * built-in registration in main.tsx (`<free-code exe> --browser-mcp`).
+ * built-in registration in main.tsx (`<cloode exe> --browser-mcp`).
  */
 export async function runBrowserMcpServer(): Promise<void> {
   enableConfigs()

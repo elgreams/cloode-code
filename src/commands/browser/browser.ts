@@ -5,12 +5,12 @@ import {
 } from '../../utils/browserMcp/setup.js'
 
 const ENABLED_MSG =
-  'Browser automation ENABLED. Restart free-code to load the browser tools ' +
+  'Browser automation ENABLED. Restart cloode to load the browser tools ' +
   '(mcp__browser__*). They drive your installed Chrome with a persistent ' +
   'profile, so logins stick between sessions.'
 
 const DISABLED_MSG =
-  'Browser automation DISABLED. Restart free-code to unload the browser tools.'
+  'Browser automation DISABLED. Restart cloode to unload the browser tools.'
 
 export const call: LocalCommandCall = async args => {
   const arg = args.trim().toLowerCase()
@@ -30,6 +30,6 @@ export const call: LocalCommandCall = async args => {
     value:
       `Browser automation is ${enabled ? 'ON' : 'OFF'}.\n` +
       `Use \`/browser on\` to enable or \`/browser off\` to disable ` +
-      `(takes effect after restarting free-code).`,
+      `(takes effect after restarting cloode).`,
   }
 }
