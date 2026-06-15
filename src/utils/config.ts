@@ -253,6 +253,12 @@ export type GlobalConfig = {
     }
     /** Profile info captured at save time, for display. */
     accountEmail?: string
+    /**
+     * Full oauthAccount profile snapshot captured at save time. Restored into
+     * the live oauthAccount on switch so the startup banner / whoami reflect
+     * the account whose token is actually active.
+     */
+    account?: AccountInfo
     addedAt: number
   }[]
   /** id of the saved account currently written into the live slot. */

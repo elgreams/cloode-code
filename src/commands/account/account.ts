@@ -37,7 +37,7 @@ export const call: LocalCommandCall = async args => {
       }
       return {
         type: 'text',
-        value: `Saved current account as "${saved.label}"${saved.accountEmail ? ` (${saved.accountEmail})` : ''}.`,
+        value: `Saved current account as "${saved.label}"${saved.accountEmail ? ` (${saved.accountEmail})` : ''} [token …${saved.tokens.accessToken.slice(-8)}].`,
       }
     }
 
@@ -51,16 +51,19 @@ export const call: LocalCommandCall = async args => {
       }
       const activeId = getActiveAccountId()
       const lines = accounts.map(a => {
-        const marker = a.id === activeId ? '* ' : '  '
+        const active = a.id === activeId
+        const marker = active ? '→ ' : '  '
         const email = a.accountEmail ? ` — ${a.accountEmail}` : ''
         const sub = a.tokens.subscriptionType
           ? ` [${a.tokens.subscriptionType}]`
           : ''
-        return `${marker}${a.label}${email}${sub}`
+        const tag = active ? '  (active)' : ''
+        const tok = `  …${a.tokens.accessToken.slice(-8)}`
+        return `${marker}${a.label}${email}${sub}${tok}${tag}`
       })
       return {
         type: 'text',
-        value: `Saved accounts (* = active):\n${lines.join('\n')}`,
+        value: `Saved accounts:\n${lines.join('\n')}`,
       }
     }
 

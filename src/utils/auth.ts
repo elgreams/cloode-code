@@ -15,7 +15,6 @@ import {
   getIsNonInteractiveSession,
   preferThirdPartyAuthentication,
 } from '../bootstrap/state.js'
-import { syncActiveAccountTokens } from './accountSwitch.js'
 import {
   getMockSubscriptionType,
   shouldUseMockSubscription,
@@ -1234,14 +1233,6 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
 
     if (updateStatus.success) {
       logEvent('tengu_oauth_tokens_saved', { storageBackend })
-      // Keep the active multi-account snapshot in sync so a token refresh
-      // doesn't leave the saved copy stale (see accountSwitch.ts). Guarded:
-      // never let this break the primary save path.
-      try {
-        syncActiveAccountTokens(storageData.claudeAiOauth)
-      } catch (syncError) {
-        logError(syncError)
-      }
     } else {
       logEvent('tengu_oauth_tokens_save_failed', { storageBackend })
     }
@@ -1603,6 +1594,19 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
         : lockedTokens.scopes,
     })
     saveOAuthTokensIfNeeded(refreshedTokens)
+    // Keep the matching multi-account snapshot current across a refresh. Match
+    // by the OLD refresh token (the one we just rotated) — NOT the active
+    // pointer or email, both of which misattribute during a /login to a
+    // different account and cross-contaminate snapshots. Guarded so it can
+    // never break refresh.
+    try {
+      const { syncSavedAccountByRefreshToken } = await import(
+        './accountSwitch.js'
+      )
+      syncSavedAccountByRefreshToken(lockedTokens.refreshToken, refreshedTokens)
+    } catch (syncError) {
+      logError(syncError)
+    }
 
     // Clear the cache after refreshing token
     getClaudeAIOAuthTokens.cache?.clear?.()
