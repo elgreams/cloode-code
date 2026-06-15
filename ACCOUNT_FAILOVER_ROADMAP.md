@@ -1,6 +1,6 @@
 # Multi-Account Auto-Failover — Roadmap
 
-Status: **manual-switching foundation BUILT (uncommitted, in local cli-dev); auto-failover NOT started.**
+Status: **manual switching BUILT, COMMITTED & verified with two real accounts (mid-session switching confirmed). Auto-failover + always-on usage display NOT started.**
 
 ## Current state (what's built so far)
 
@@ -172,14 +172,32 @@ These are the parts that are *not* obviously solved and need decisions before bu
    additive (no migration of the live slot needed for the manual case, so Q2 is
    deferred, not yet resolved).
 2. ✅ **`/account` command** (save/list/use/remove) — manual switching, no auto.
-3. ✅ **Per-account refresh** correctness (Q1) — solved via `syncActiveAccountTokens`.
-4. ⏳ **NEXT — verify with a real second account.** Confirm switching changes
-   identity + gives a separate rate limit. Nothing automated depends-proven until
-   this passes.
-5. ⏳ **Auto-failover (between turns)** — the core goal, NOT started. Subscribe to
-   the existing `statusListeners` (and/or poll `getRawUtilization()` after each
-   turn); when the active account is exhausted, rotate to the next non-exhausted
-   saved account before the next request. Resolves/needs Q3, Q4, Q5, Q10, Q11.
-   Add an `autoAccountFailover` setting (default off).
-6. ⏳ **Polish**: active-account indicator in the footer, all-exhausted handling
+3. ✅ **Per-account refresh** correctness (Q1) — sync moved to the REFRESH path
+   only, matched by the rotated refresh token (`syncSavedAccountByRefreshToken`).
+   The earlier universal-chokepoint version cross-contaminated snapshots on a
+   /login to a different account (both saved accounts ended up with the same
+   token); fixed.
+4. ✅ **Verified with two real accounts.** Switching swaps the token AND restores
+   the oauthAccount profile (email/identity persists across sessions). Tokens
+   confirmed distinct; usage moves to the switched account.
+5. ✅ **Mid-session switching confirmed.** `switchToAccount` takes effect within
+   a running process (no restart): client is rebuilt per request, reads the token
+   live, and the switch clears both token memo + keychain cache. Auto-failover can
+   rely on this.
+6. ⏳ **NEXT — Auto-failover (between turns)** — the core goal, NOT started.
+   Subscribe to the existing `statusListeners` (and/or poll `getRawUtilization()`
+   after each turn); when the active account is exhausted, rotate to the next
+   non-exhausted saved account before the next request. Resolves/needs Q3, Q4,
+   Q5, Q10, Q11. Add an `autoAccountFailover` setting (default off).
+7. ⏳ **Always-on usage display** — a command (e.g. `/usage` toggle or a
+   `showUsageLimit` setting) that renders a persistent indicator of the CURRENT
+   account's usage (5h + 7d windows, % used, reset time) for whichever account is
+   active. Data source already exists: `getRawUtilization()` + the
+   `anthropic-ratelimit-unified-*` headers parsed in `claudeAiLimits.ts`. Should
+   update live as `statusListeners` fire and re-label when the active account
+   switches (manual or via failover). Pairs naturally with failover — you want to
+   see which account you're on and how much is left. Open: footer line vs status
+   widget; how to show usage for a freshly-switched account before its first
+   request populates headers (may show "unknown until next call").
+8. ⏳ **Polish**: active-account indicator in the footer, all-exhausted handling
    (surface soonest `resetsAt` instead of thrashing), docs note (Q9).
