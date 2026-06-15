@@ -83,6 +83,10 @@ export type SavedCompanion = {
   companion: StoredCompanion
   override?: CompanionOverride
   shinyOverride?: boolean
+  // Snapshot of the creature's appearance at save time. Restored as a pin on
+  // load so it looks identical regardless of the active account. Optional:
+  // saves made before this existed fall back to re-rolling from the account.
+  bones?: CompanionBones
   savedAt: number
 }
 

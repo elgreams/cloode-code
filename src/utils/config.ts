@@ -368,6 +368,11 @@ export type GlobalConfig = {
   companion?: import('../buddy/types.js').StoredCompanion
   companionOverride?: import('../buddy/types.js').CompanionOverride
   companionShinyOverride?: boolean
+  // Pinned bones for the active companion. Set when a save is loaded so the
+  // creature keeps its exact appearance regardless of which account is active
+  // (bones are otherwise re-rolled from the account UUID on every read).
+  // Cleared by hatch/select/reroll/default, which intentionally re-roll.
+  companionBones?: import('../buddy/types.js').CompanionBones
   companionSaved?: import('../buddy/types.js').SavedCompanion[]
   companionMuted?: boolean
   companionModel?: string

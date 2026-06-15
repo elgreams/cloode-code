@@ -132,13 +132,14 @@ export function rollCompanionBones(): Roll {
   } else {
     result = roll(userId)
   }
-  if (config.companionShinyOverride !== undefined) {
-    return {
-      ...result,
-      bones: { ...result.bones, shiny: config.companionShinyOverride },
-    }
-  }
-  return result
+  return { ...result, bones: applyShinyOverride(result.bones) }
+}
+
+// The shiny toggle (/buddy shiny) applies on top of whatever bones we have,
+// whether freshly rolled or restored from a pinned save.
+function applyShinyOverride(bones: CompanionBones): CompanionBones {
+  const override = getGlobalConfig().companionShinyOverride
+  return override === undefined ? bones : { ...bones, shiny: override }
 }
 
 export function companionUserId(): string {
@@ -154,9 +155,14 @@ export function companionUserId(): string {
 // so species renames and SPECIES-array edits can't break stored companions,
 // and editing config.companion can't fake a rarity.
 export function getCompanion(): Companion | undefined {
-  const stored = getGlobalConfig().companion
+  const config = getGlobalConfig()
+  const stored = config.companion
   if (!stored) return undefined
-  const { bones } = rollCompanionBones()
+  // A pinned save keeps its exact appearance across account switches; only the
+  // shiny toggle is still honored. Otherwise re-roll from the active account.
+  const bones = config.companionBones
+    ? applyShinyOverride(config.companionBones)
+    : rollCompanionBones().bones
   // bones last so stale bones fields in old-format configs get overridden
   return { ...stored, ...bones }
 }

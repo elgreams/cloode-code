@@ -81,7 +81,9 @@ function speciesFromArg(arg: string): Species | undefined {
 function hatchCompanion(): { soul: StoredCompanion; bones: CompanionBones } {
   const { bones, inspirationSeed } = rollCompanionBones()
   const soul = { ...generateSoul(bones, inspirationSeed), hatchedAt: Date.now() }
-  saveGlobalConfig(c => ({ ...c, companion: soul }))
+  // A fresh hatch (select/reroll/default/hatch) re-rolls from the account, so
+  // drop any pin left over from a previously loaded save.
+  saveGlobalConfig(c => ({ ...c, companion: soul, companionBones: undefined }))
   return { soul, bones }
 }
 
@@ -334,12 +336,25 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     const label = normalizeSaveLabel(restStr || config.companion.name)
     if (!label) return say('Usage: `/buddy save [name]`')
 
+    // Snapshot the exact bones on screen now, so loading this save restores the
+    // same creature under any account instead of re-rolling from its UUID.
+    const current = getCompanion()
     const saved: SavedCompanion = {
       id: randomBytes(3).toString('hex'),
       label,
       companion: config.companion,
       override: config.companionOverride,
       shinyOverride: config.companionShinyOverride,
+      bones: current
+        ? {
+            rarity: current.rarity,
+            species: current.species,
+            eye: current.eye,
+            hat: current.hat,
+            shiny: current.shiny,
+            stats: current.stats,
+          }
+        : undefined,
       savedAt: Date.now(),
     }
     saveGlobalConfig(c => {
@@ -361,6 +376,9 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       companion: saved.companion,
       companionOverride: saved.override,
       companionShinyOverride: saved.shinyOverride,
+      // Pin the saved bones so the creature looks identical regardless of the
+      // active account. Older saves without bones fall back to re-rolling.
+      companionBones: saved.bones,
     }))
     const companion = getCompanion()
     if (!companion) return say(`Loaded **${saved.label}**.`)
@@ -420,7 +438,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       return say(`Renamed to **${newName}**.`)
     }
     case 'release':
-      saveGlobalConfig(c => ({ ...c, companion: undefined }))
+      saveGlobalConfig(c => ({ ...c, companion: undefined, companionBones: undefined }))
       return say(
         `👋 You released ${companion.name}. Run \`/buddy\` to hatch a new one.`,
       )
