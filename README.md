@@ -47,6 +47,7 @@ Then run `cloode` and use the `/login` command to authenticate with your preferr
 - [Requirements](#requirements)
 - [Build](#build)
 - [Usage](#usage)
+- [Multi-Account Switching & Failover](#multi-account-switching--failover)
 - [Browser Automation](#browser-automation)
 - [Commands & Capabilities](#commands--capabilities)
 - [Experimental Features](#experimental-features)
@@ -83,7 +84,7 @@ Claude Code ships with 88 feature flags gated behind `bun:bundle` compile-time s
 
 ### Claude-in-Chrome replaced
 
-The upstream Claude-in-Chrome integration depends on an unpublished Anthropic package and cannot run in this fork, so it is disabled. The built-in [`/browser` automation](#browser-automation) replaces it — it drives your installed Chrome directly, with no extension or extra dependencies.
+The upstream Claude-in-Chrome integration depends on an unpublished Anthropic package and cannot run in this fork, so it is disabled. The built-in [`/browser` automation](#browser-automation) replaces it: it drives your installed Chrome directly, with no extension or extra dependencies.
 
 ---
 
@@ -111,7 +112,7 @@ Use Anthropic's first-party API directly. Pick any of these from the `/model` me
 ### OpenAI Codex (ChatGPT)
 
 Use GPT models through a ChatGPT (Plus/Pro/Business) subscription. Sign in with
-`/login-chatgpt`, then pick a GPT model from `/model` — **no env var required**.
+`/login-chatgpt`, then pick a GPT model from `/model` (**no env var required**).
 You can be logged into Claude **and** ChatGPT at the same time and switch between
 them per request straight from `/model`.
 
@@ -127,17 +128,17 @@ them per request straight from `/model`.
 
 ```text
 /login-chatgpt     # sign in with ChatGPT
-/model             # pick a GPT model (or a Claude model — switch any time)
+/model             # pick a GPT model (or a Claude model, switch any time)
 /logout-chatgpt    # sign out of ChatGPT
 ```
 
 The legacy `CLAUDE_CODE_USE_OPENAI=1` env var still works (forces OpenAI globally),
-but it's no longer necessary — per-model routing handles everything.
+but it's no longer necessary; per-model routing handles everything.
 
 ### NVIDIA NIM & OpenAI-compatible endpoints
 
-Connect **any** OpenAI-compatible `/v1/chat/completions` backend — **NVIDIA NIM**,
-OpenRouter, Together, vLLM, Ollama, LM Studio, or your own self-hosted server —
+Connect **any** OpenAI-compatible `/v1/chat/completions` backend (**NVIDIA NIM**,
+OpenRouter, Together, vLLM, Ollama, LM Studio, or your own self-hosted server)
 natively, with no proxy. Cloode Code translates the Anthropic Messages protocol to
 chat-completions in-process (the same mechanism the ChatGPT integration uses).
 
@@ -155,12 +156,12 @@ remembers any model the backend rejects so the menu self-heals. Anthropic-only
 features (extended thinking, prompt caching, effort) don't apply to these models
 and are dropped from the request automatically.
 
-> **Tool-calling is the whole ballgame.** Cloode Code is a heavy tool user — choose
+> **Tool-calling is the whole ballgame.** Cloode Code is a heavy tool user, so choose
 > models with solid OpenAI function-calling (e.g. NIM's Nemotron/Llama *-tool*
 > variants). Weaker models will struggle regardless of the adapter.
 
 Keys can also come from an env var for CI/scripting (`NVIDIA_NIM_API_KEY`,
-`OPENROUTER_API_KEY`, `TOGETHER_API_KEY`, or `OPENAI_COMPAT_API_KEY`) — the
+`OPENROUTER_API_KEY`, `TOGETHER_API_KEY`, or `OPENAI_COMPAT_API_KEY`); the
 matching preset auto-activates without `/provider`.
 
 ### AWS Bedrock
@@ -222,7 +223,7 @@ Supports custom deployment IDs as model names.
 ## Requirements
 
 - **Runtime**: [Bun](https://bun.sh) >= 1.3.11
-- **OS**: macOS, Linux, or Windows (native — see the PowerShell installer above; or via WSL)
+- **OS**: macOS, Linux, or Windows (native, see the PowerShell installer above; or via WSL)
 - **Auth**: An API key or OAuth login for your chosen provider
 
 ```bash
@@ -328,7 +329,7 @@ Conversations are saved to disk and can be resumed later.
 | `CLAUDE_BROWSER_EXECUTABLE` | Path to a specific Chrome/Chromium binary for `/browser` |
 | `CLAUDE_BROWSER_EXTRA_ARGS` | Extra args passed to Chrome at launch |
 | `CLAUDE_BROWSER_ACTION_TIMEOUT_MS` | Click/type auto-wait timeout (default 5000) |
-| `NVIDIA_NIM_API_KEY` | NVIDIA NIM key — auto-activates the NIM provider |
+| `NVIDIA_NIM_API_KEY` | NVIDIA NIM key (auto-activates the NIM provider) |
 | `OPENROUTER_API_KEY` / `TOGETHER_API_KEY` | Auto-activate the OpenRouter / Together preset |
 | `OPENAI_COMPAT_API_KEY` | Key for the generic `custom` OpenAI-compatible preset |
 | `CLAUDE_CODE_USE_OPENAI` | Force Codex/OpenAI routing globally (legacy) |
@@ -336,9 +337,53 @@ Conversations are saved to disk and can be resumed later.
 
 ---
 
+## Multi-Account Switching & Failover
+
+Save several Anthropic (Claude) logins at once and switch between them, manually
+or automatically when one hits its usage limit. The motivating case: two $20 Pro
+subscriptions are cheaper than one $100 Max plan, and people already swap between
+them by hand. This automates that swap.
+
+Everything lives under the `/account` command:
+
+```text
+/account save <label>      # snapshot the current login under a name
+/account list              # show saved accounts, active marker, and limit status
+/account use <label>       # switch the active account (takes effect next request)
+/account remove <label>    # forget a saved account
+/account failover [on|off] # auto-switch when the active account is exhausted
+/account usage [on|off]    # show a live usage line in the prompt footer
+```
+
+**Switching is live.** A switch writes the chosen account's token into the active
+slot and takes effect on the next request, with no restart. The displayed identity
+(email/profile) follows the switch too.
+
+**Auto-failover (`/account failover on`, default off).** When the active account
+is exhausted, the *next* request rolls over to the next non-exhausted saved
+account, never mid-response. "Exhausted" means a hard rate-limit rejection
+(always a backstop) or crossing a utilization threshold (`autoAccountFailoverThreshold`,
+default `0.95` of the 5h or 7d window; set it to `1.0` to squeeze every token and
+only switch on a hard reject). Each account's reset time is tracked so failover
+won't roll onto another tapped-out account; if every account is exhausted it
+surfaces the soonest reset instead of thrashing. Failover only fires from the main
+REPL turn boundary.
+
+**Usage footer (`/account usage on`, default off).** Adds a dedicated footer line
+showing the active account label, 5h/7d usage %, reset times, and the failover
+threshold when enabled. It updates live as limit headers come in and re-labels
+when the active account switches.
+
+> **A note on account safety.** Owning and using multiple paid subscriptions you
+> hold is normal. Automated failover to defeat per-account caps is a grey area
+> ("circumventing rate limits") and credential *sharing* is what provider policies
+> target. Use this with accounts that are yours, and at your own discretion.
+
+---
+
 ## Browser Automation
 
-Cloode Code can drive your installed Chrome directly — no extension, no Node, no Playwright. Enable it with `/browser on` (off by default; the setting persists), then restart. The tools surface as `mcp__browser__*`.
+Cloode Code can drive your installed Chrome directly: no extension, no Node, no Playwright. Enable it with `/browser on` (off by default; the setting persists), then restart. The tools surface as `mcp__browser__*`.
 
 - Drives your real Chrome/Chromium over the Chrome DevTools Protocol, with a persistent profile so logins stick between sessions.
 - Tools: navigate, accessibility snapshot, click, type, press key, evaluate JS, screenshot, console messages, network requests, wait, and tab management.
@@ -356,24 +401,25 @@ Run `/help` in the REPL for the full command list. Cloode Code keeps all of Clau
 
 | Command | What it does |
 |---|---|
-| `/provider` | Add OpenAI-compatible endpoints (NIM, OpenRouter, vLLM, …) — see [Model Providers](#model-providers) |
-| `/browser` | Drive your installed Chrome over CDP — see [Browser Automation](#browser-automation) |
-| `sessions` (CLI) | List/browse resumable sessions across projects — see [Session Management](#session-management) |
+| `/provider` | Add OpenAI-compatible endpoints (NIM, OpenRouter, vLLM, …); see [Model Providers](#model-providers) |
+| `/account` | Save, switch, and auto-failover between Anthropic logins; see [Multi-Account Switching & Failover](#multi-account-switching--failover) |
+| `/browser` | Drive your installed Chrome over CDP; see [Browser Automation](#browser-automation) |
+| `sessions` (CLI) | List/browse resumable sessions across projects; see [Session Management](#session-management) |
 | `/color` | Recolor the startup banner border + the Clawd figure (`/color cyan`, `/color #ff8800`, `/color reset`) |
-| `/buddy` | Hatch a terminal companion (the April Fools easter egg) — `pet`, `rename`, `release`, `mute` |
+| `/buddy` | Hatch a terminal companion (the April Fools easter egg): `pet`, `rename`, `release`, `mute` |
 
 **Inherited Claude Code essentials** (all working)
 
 | Area | How |
 |---|---|
-| MCP servers | `/mcp`, or `--mcp-config <file>` — connect external tools/data |
+| MCP servers | `/mcp`, or `--mcp-config <file>` to connect external tools/data |
 | Skills | `/skills`, or drop `.md` files in `~/.claude/skills/`; invoke with `/skill-name` |
 | Memory | `/memory`, plus `CLAUDE.md` auto-discovery for project context |
-| Hooks | `/hooks` — run shell commands on tool/file events |
-| Plugins | `/plugin` (alias `/marketplace`) — install community plugins |
-| Custom agents | `/agents` — define agent presets; `--agents` to load |
-| Checkpoints | `/rewind` — restore code/conversation to an earlier point |
-| IDE bridge | `/ide` — VS Code / JetBrains / Cursor integration |
+| Hooks | `/hooks` to run shell commands on tool/file events |
+| Plugins | `/plugin` (alias `/marketplace`) to install community plugins |
+| Custom agents | `/agents` to define agent presets; `--agents` to load |
+| Checkpoints | `/rewind` to restore code/conversation to an earlier point |
+| IDE bridge | `/ide` for VS Code / JetBrains / Cursor integration |
 | Diagnostics | `/doctor`, `/status`, `/cost`, `/context` |
 
 ---
