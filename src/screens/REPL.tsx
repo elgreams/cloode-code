@@ -35,7 +35,7 @@ import { logForDebugging } from '../utils/debug.js';
 import { logMemWatch, startMemWatchSampler } from '../utils/memWatch.js';
 import { QueryGuard } from '../utils/QueryGuard.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
-import { formatTokens, truncateToWidth } from '../utils/format.js';
+import { formatTokens, truncateToWidth, formatResetTime } from '../utils/format.js';
 import { consumeEarlyInput } from '../utils/earlyInput.js';
 import { setMemberActive } from '../utils/swarm/teamHelpers.js';
 import { isSwarmWorker, generateSandboxRequestId, sendSandboxPermissionRequestViaMailbox, sendSandboxPermissionResponseViaMailbox } from '../utils/swarm/permissionSync.js';
@@ -225,6 +225,7 @@ const UndercoverAutoCallout = "external" === 'ant' ? require('../components/Unde
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import { activityManager } from '../utils/activityManager.js';
 import { createAbortController } from '../utils/abortController.js';
+import { maybeFailoverBetweenTurns } from '../utils/accountFailover.js';
 import { MCPConnectionManager } from 'src/services/mcp/MCPConnectionManager.js';
 import { useFeedbackSurvey } from 'src/components/FeedbackSurvey/useFeedbackSurvey.js';
 import { useMemorySurvey } from 'src/components/FeedbackSurvey/useMemorySurvey.js';
@@ -2673,6 +2674,26 @@ export function REPL({
     // store — useManageMCPConnections may have populated it since the
     // render that captured this closure (same pattern as computeTools).
     if (shouldQuery) {
+      // Auto-failover (between turns only): if the active Anthropic account hit
+      // its usage limit, switch to the next non-exhausted saved account BEFORE
+      // we build the request. Runs here — not mid-stream — so the live token is
+      // never swapped during a response. No-op unless autoAccountFailover is on.
+      const failover = maybeFailoverBetweenTurns();
+      if (failover?.type === 'switched') {
+        const fromLabel = failover.from?.label ?? 'previous account';
+        const resetAt = formatResetTime(failover.fromReset, true);
+        setMessages(prev => [...prev, createSystemMessage(
+          `Usage limit reached on "${fromLabel}" — switched to "${failover.to.label}"${failover.to.accountEmail ? ` (${failover.to.accountEmail})` : ''}.${resetAt ? ` "${fromLabel}" resets ${resetAt}.` : ''}`,
+          'info',
+        )]);
+      } else if (failover?.type === 'all-exhausted') {
+        const resetAt = formatResetTime(failover.soonestReset, true);
+        setMessages(prev => [...prev, createSystemMessage(
+          `All saved accounts have hit their usage limits.${resetAt ? ` Soonest reset is ${resetAt}.` : ''} Staying on the current account.`,
+          'warning',
+        )]);
+      }
+
       const freshClients = mergeClients(initialMcpClients, store.getState().mcp.clients);
       void diagnosticTracker.handleQueryStart(freshClients);
       const ideClient = getConnectedIdeClient(freshClients);

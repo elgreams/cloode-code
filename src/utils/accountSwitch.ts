@@ -166,6 +166,26 @@ export function syncSavedAccountByRefreshToken(
   }))
 }
 
+/**
+ * Record (or clear) a saved account's usage-limit reset time. Centralised here
+ * so all savedAnthropicAccounts mutations live in one module. No-op if the
+ * value is unchanged, so callers on a hot path can call freely without churning
+ * the config file. Pass undefined to clear an exhaustion mark.
+ */
+export function setAccountExhausted(
+  id: string,
+  exhaustedUntil: number | undefined,
+): void {
+  const target = listSavedAccounts().find(a => a.id === id)
+  if (!target || target.exhaustedUntil === exhaustedUntil) return
+  saveGlobalConfig(cfg => ({
+    ...cfg,
+    savedAnthropicAccounts: (cfg.savedAnthropicAccounts ?? []).map(a =>
+      a.id === id ? { ...a, exhaustedUntil } : a,
+    ),
+  }))
+}
+
 export function removeSavedAccount(id: string): boolean {
   const existing = listSavedAccounts()
   if (!existing.some(a => a.id === id)) return false

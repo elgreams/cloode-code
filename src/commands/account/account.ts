@@ -6,6 +6,8 @@ import {
   saveCurrentAccount,
   switchToAccount,
 } from '../../utils/accountSwitch.js'
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import { formatResetTime } from '../../utils/format.js'
 
 const USAGE = [
   'Multi-account switching (probe). Subcommands:',
@@ -13,10 +15,15 @@ const USAGE = [
   '  /account list           List saved accounts',
   '  /account use <label>    Switch the active account to <label>',
   '  /account remove <label> Forget a saved account',
+  '  /account failover [on|off]  Toggle auto-failover when a limit is hit',
 ].join('\n')
 
 function findByLabel(label: string) {
   return listSavedAccounts().find(a => a.label === label)
+}
+
+function failoverState(): 'on' | 'off' {
+  return getGlobalConfig().autoAccountFailover ? 'on' : 'off'
 }
 
 export const call: LocalCommandCall = async args => {
@@ -50,6 +57,7 @@ export const call: LocalCommandCall = async args => {
         }
       }
       const activeId = getActiveAccountId()
+      const nowSec = Date.now() / 1000
       const lines = accounts.map(a => {
         const active = a.id === activeId
         const marker = active ? '→ ' : '  '
@@ -59,11 +67,33 @@ export const call: LocalCommandCall = async args => {
           : ''
         const tag = active ? '  (active)' : ''
         const tok = `  …${a.tokens.accessToken.slice(-8)}`
-        return `${marker}${a.label}${email}${sub}${tok}${tag}`
+        const limited =
+          a.exhaustedUntil && a.exhaustedUntil > nowSec
+            ? `  (limited until ${formatResetTime(a.exhaustedUntil, true)})`
+            : ''
+        return `${marker}${a.label}${email}${sub}${tok}${tag}${limited}`
       })
       return {
         type: 'text',
-        value: `Saved accounts:\n${lines.join('\n')}`,
+        value: `Saved accounts (auto-failover ${failoverState()}):\n${lines.join('\n')}`,
+      }
+    }
+
+    case 'failover': {
+      const arg = label.toLowerCase()
+      if (arg !== 'on' && arg !== 'off') {
+        return {
+          type: 'text',
+          value: `Auto-failover is ${failoverState()}. Use /account failover on|off to change it.`,
+        }
+      }
+      const enabled = arg === 'on'
+      saveGlobalConfig(cfg => ({ ...cfg, autoAccountFailover: enabled }))
+      return {
+        type: 'text',
+        value: enabled
+          ? 'Auto-failover ON. When the active account hits its usage limit, the next request will switch to the next non-exhausted saved account.'
+          : 'Auto-failover OFF. Accounts will only switch when you run /account use.',
       }
     }
 

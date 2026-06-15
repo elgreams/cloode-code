@@ -260,9 +260,30 @@ export type GlobalConfig = {
      */
     account?: AccountInfo
     addedAt: number
+    /**
+     * Unix epoch (seconds) when this account's usage limit resets, stamped by
+     * auto-failover when the account is seen exhausted (hard-rejected or over
+     * the utilization threshold). Used to avoid rotating onto an account that
+     * is still tapped out. Undefined = not known to be exhausted.
+     */
+    exhaustedUntil?: number
   }[]
   /** id of the saved account currently written into the live slot. */
   activeAnthropicAccountId?: string
+
+  /**
+   * Auto-failover: when the active Anthropic account hits its usage limit,
+   * automatically switch to the next non-exhausted saved account between turns.
+   * Opt-in (default off). See src/utils/accountFailover.ts.
+   */
+  autoAccountFailover?: boolean
+  /**
+   * Utilization fraction (0-1) at which auto-failover preemptively switches,
+   * checked against the 5h and 7d windows. 1.0 = only switch on a hard
+   * rejection (squeeze every token); lower = switch earlier to avoid hitting a
+   * wall mid-turn. Default 0.95. A hard rejection always fails over regardless.
+   */
+  autoAccountFailoverThreshold?: number
 
   /**
    * OpenAI Codex OAuth tokens, stored separately from Anthropic credentials.
@@ -708,6 +729,8 @@ function createDefaultGlobalConfig(): GlobalConfig {
     cachedGrowthBookFeatures: {},
     respectGitignore: true,
     copyFullResponse: false,
+    autoAccountFailover: false,
+    autoAccountFailoverThreshold: 0.95,
   }
 }
 
@@ -752,6 +775,8 @@ export const GLOBAL_CONFIG_KEYS = [
   'prStatusFooterEnabled',
   'remoteControlAtStartup',
   'remoteDialogSeen',
+  'autoAccountFailover',
+  'autoAccountFailoverThreshold',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
