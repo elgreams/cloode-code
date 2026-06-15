@@ -459,8 +459,13 @@ export function extractQuotaStatusFromHeaders(
 
   if (!shouldProcessRateLimits(isSubscriber)) {
     // If we have any rate limit state, clear it
+    const previousRawUtilization = rawUtilization
     rawUtilization = {}
-    if (currentLimits.status !== 'allowed' || currentLimits.resetsAt) {
+    if (
+      currentLimits.status !== 'allowed' ||
+      currentLimits.resetsAt ||
+      !isEqual(previousRawUtilization, rawUtilization)
+    ) {
       const defaultLimits: ClaudeAILimits = {
         status: 'allowed',
         unifiedRateLimitFallbackAvailable: false,
@@ -473,13 +478,17 @@ export function extractQuotaStatusFromHeaders(
 
   // Process headers (applies mocks from /mock-limits command if active)
   const headersToUse = processRateLimitHeaders(headers)
+  const previousRawUtilization = rawUtilization
   rawUtilization = extractRawUtilization(headersToUse)
   const newLimits = computeNewLimitsFromHeaders(headersToUse)
 
   // Cache extra usage status (persists across sessions)
   cacheExtraUsageDisabledReason(headersToUse)
 
-  if (!isEqual(currentLimits, newLimits)) {
+  if (
+    !isEqual(currentLimits, newLimits) ||
+    !isEqual(previousRawUtilization, rawUtilization)
+  ) {
     emitStatusChange(newLimits)
   }
 }
@@ -494,6 +503,7 @@ export function extractQuotaStatusFromError(error: APIError): void {
 
   try {
     let newLimits = { ...currentLimits }
+    const previousRawUtilization = rawUtilization
     if (error.headers) {
       // Process headers (applies mocks from /mock-limits command if active)
       const headersToUse = processRateLimitHeaders(error.headers)
@@ -506,7 +516,10 @@ export function extractQuotaStatusFromError(error: APIError): void {
     // For errors, always set status to rejected even if headers are not present.
     newLimits.status = 'rejected'
 
-    if (!isEqual(currentLimits, newLimits)) {
+    if (
+      !isEqual(currentLimits, newLimits) ||
+      (error.headers && !isEqual(previousRawUtilization, rawUtilization))
+    ) {
       emitStatusChange(newLimits)
     }
   } catch (e) {

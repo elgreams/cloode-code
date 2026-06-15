@@ -9,13 +9,18 @@ import type { IDESelection } from '../../hooks/useIdeSelection.js';
 import { useSettings } from '../../hooks/useSettings.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
+import { getRawUtilization } from '../../services/claudeAiLimits.js';
+import { useClaudeAiLimits } from '../../services/claudeAiLimitsHook.js';
 import type { MCPServerConnection } from '../../services/mcp/types.js';
 import { useAppState } from '../../state/AppState.js';
 import type { ToolPermissionContext } from '../../Tool.js';
 import type { Message } from '../../types/message.js';
 import type { PromptInputMode, VimMode } from '../../types/textInputTypes.js';
 import type { AutoUpdaterResult } from '../../utils/autoUpdater.js';
+import { getGlobalConfig } from '../../utils/config.js';
+import { formatResetTime } from '../../utils/format.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
+import { getActiveAccountId, listSavedAccounts } from '../../utils/accountSwitch.js';
 import { isUndercover } from '../../utils/undercover.js';
 import { CoordinatorTaskPanel, useCoordinatorTaskCount } from '../CoordinatorAgentStatus.js';
 import { getLastAssistantMessageId, StatusLine, statusLineShouldDisplay } from '../StatusLine.js';
@@ -142,6 +147,7 @@ function PromptInputFooter({
           <PromptInputFooterLeftSide exitMessage={exitMessage} vimMode={vimMode} mode={mode} toolPermissionContext={toolPermissionContext} suppressHint={suppressHint} isLoading={isLoading} tasksSelected={pillSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} isPasting={isPasting} isSearching={isSearching} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historyFailedMatch={historyFailedMatch} onOpenTasksDialog={onOpenTasksDialog} />
         </Box>
         <Box flexShrink={1} gap={1}>
+          <AccountUsageStatus />
           {isFullscreen ? null : <Notifications apiKeyStatus={apiKeyStatus} autoUpdaterResult={autoUpdaterResult} debug={debug} isAutoUpdating={isAutoUpdating} verbose={verbose} messages={messages} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={onChangeIsUpdating} ideSelection={ideSelection} mcpClients={mcpClients} isInputWrapped={isInputWrapped} isNarrow={isNarrow} />}
           {"external" === 'ant' && isUndercover() && <Text dimColor>undercover</Text>}
           <BridgeStatusIndicator bridgeSelected={bridgeSelected} />
@@ -151,6 +157,41 @@ function PromptInputFooter({
     </>;
 }
 export default memo(PromptInputFooter);
+
+function AccountUsageStatus(): React.ReactNode {
+  useClaudeAiLimits();
+  const config = getGlobalConfig();
+  const activeId = getActiveAccountId();
+  const account = activeId
+    ? listSavedAccounts().find(saved => saved.id === activeId)
+    : undefined;
+  const raw = getRawUtilization();
+  const fiveHour = formatUsageWindow('5h', raw.five_hour);
+  const sevenDay = formatUsageWindow('7d', raw.seven_day);
+  const windows = [fiveHour, sevenDay].filter((part): part is string => Boolean(part));
+
+  const parts = [
+    account?.label,
+    ...windows,
+    config.autoAccountFailover
+      ? `failover ${Math.round((config.autoAccountFailoverThreshold ?? 0.95) * 100)}%`
+      : undefined,
+  ].filter((part): part is string => Boolean(part));
+
+  if (parts.length === 0) return null;
+
+  return <Text dimColor wrap="truncate">
+      {parts.join(' · ')}
+    </Text>;
+}
+
+function formatUsageWindow(label: string, window: ReturnType<typeof getRawUtilization>['five_hour']): string | null {
+  if (!window) return null;
+  const percent = Math.min(100, Math.max(0, window.utilization * 100));
+  const reset = formatResetTime(window.resets_at, false);
+  return `${label} ${percent.toFixed(0)}%${reset ? ` resets ${reset}` : ''}`;
+}
+
 type BridgeStatusProps = {
   bridgeSelected: boolean;
 };
