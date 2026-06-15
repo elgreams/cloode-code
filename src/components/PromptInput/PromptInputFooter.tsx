@@ -16,11 +16,11 @@ import { useAppState } from '../../state/AppState.js';
 import type { ToolPermissionContext } from '../../Tool.js';
 import type { Message } from '../../types/message.js';
 import type { PromptInputMode, VimMode } from '../../types/textInputTypes.js';
+import { getActiveAccountId, listSavedAccounts } from '../../utils/accountSwitch.js';
 import type { AutoUpdaterResult } from '../../utils/autoUpdater.js';
 import { getGlobalConfig } from '../../utils/config.js';
 import { formatResetTime } from '../../utils/format.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
-import { getActiveAccountId, listSavedAccounts } from '../../utils/accountSwitch.js';
 import { isUndercover } from '../../utils/undercover.js';
 import { CoordinatorTaskPanel, useCoordinatorTaskCount } from '../CoordinatorAgentStatus.js';
 import { getLastAssistantMessageId, StatusLine, statusLineShouldDisplay } from '../StatusLine.js';
@@ -147,12 +147,12 @@ function PromptInputFooter({
           <PromptInputFooterLeftSide exitMessage={exitMessage} vimMode={vimMode} mode={mode} toolPermissionContext={toolPermissionContext} suppressHint={suppressHint} isLoading={isLoading} tasksSelected={pillSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} isPasting={isPasting} isSearching={isSearching} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historyFailedMatch={historyFailedMatch} onOpenTasksDialog={onOpenTasksDialog} />
         </Box>
         <Box flexShrink={1} gap={1}>
-          <AccountUsageStatus />
           {isFullscreen ? null : <Notifications apiKeyStatus={apiKeyStatus} autoUpdaterResult={autoUpdaterResult} debug={debug} isAutoUpdating={isAutoUpdating} verbose={verbose} messages={messages} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={onChangeIsUpdating} ideSelection={ideSelection} mcpClients={mcpClients} isInputWrapped={isInputWrapped} isNarrow={isNarrow} />}
           {"external" === 'ant' && isUndercover() && <Text dimColor>undercover</Text>}
           <BridgeStatusIndicator bridgeSelected={bridgeSelected} />
         </Box>
       </Box>
+      <AccountUsageStatus />
       {"external" === 'ant' && <CoordinatorTaskPanel />}
     </>;
 }
@@ -161,6 +161,11 @@ export default memo(PromptInputFooter);
 function AccountUsageStatus(): React.ReactNode {
   useClaudeAiLimits();
   const config = getGlobalConfig();
+  // Own row outside the height-managed footer Box. In fullscreen the bottom
+  // slot is flexShrink:0, so a 0→1 row flip when the first usage data lands
+  // would steal a row from the ScrollBox and shift content (same hazard the
+  // StatusLine guards against). Non-fullscreen has scrollback to absorb it.
+  if (!config.accountUsageFooterEnabled || isFullscreenEnvEnabled()) return null;
   const activeId = getActiveAccountId();
   const account = activeId
     ? listSavedAccounts().find(saved => saved.id === activeId)

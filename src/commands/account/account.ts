@@ -16,14 +16,15 @@ const USAGE = [
   '  /account use <label>    Switch the active account to <label>',
   '  /account remove <label> Forget a saved account',
   '  /account failover [on|off]  Toggle auto-failover when a limit is hit',
+  '  /account usage [on|off]     Toggle the usage footer line',
 ].join('\n')
 
 function findByLabel(label: string) {
   return listSavedAccounts().find(a => a.label === label)
 }
 
-function failoverState(): 'on' | 'off' {
-  return getGlobalConfig().autoAccountFailover ? 'on' : 'off'
+function onOff(enabled: boolean | undefined): 'on' | 'off' {
+  return enabled ? 'on' : 'off'
 }
 
 export const call: LocalCommandCall = async args => {
@@ -75,7 +76,25 @@ export const call: LocalCommandCall = async args => {
       })
       return {
         type: 'text',
-        value: `Saved accounts (auto-failover ${failoverState()}):\n${lines.join('\n')}`,
+        value: `Saved accounts (auto-failover ${onOff(getGlobalConfig().autoAccountFailover)}, usage footer ${onOff(getGlobalConfig().accountUsageFooterEnabled)}):\n${lines.join('\n')}`,
+      }
+    }
+
+    case 'usage': {
+      const arg = label.toLowerCase()
+      if (arg !== 'on' && arg !== 'off') {
+        return {
+          type: 'text',
+          value: `Account usage footer is ${onOff(getGlobalConfig().accountUsageFooterEnabled)}. Use /account usage on|off to change it.`,
+        }
+      }
+      const enabled = arg === 'on'
+      saveGlobalConfig(cfg => ({ ...cfg, accountUsageFooterEnabled: enabled }))
+      return {
+        type: 'text',
+        value: enabled
+          ? 'Account usage footer ON. Usage will appear as a separate footer line when Anthropic usage data is available.'
+          : 'Account usage footer OFF.',
       }
     }
 
@@ -84,7 +103,7 @@ export const call: LocalCommandCall = async args => {
       if (arg !== 'on' && arg !== 'off') {
         return {
           type: 'text',
-          value: `Auto-failover is ${failoverState()}. Use /account failover on|off to change it.`,
+          value: `Auto-failover is ${onOff(getGlobalConfig().autoAccountFailover)}. Use /account failover on|off to change it.`,
         }
       }
       const enabled = arg === 'on'

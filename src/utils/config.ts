@@ -284,6 +284,8 @@ export type GlobalConfig = {
    * wall mid-turn. Default 0.95. A hard rejection always fails over regardless.
    */
   autoAccountFailoverThreshold?: number
+  /** Show Anthropic account usage as a dedicated prompt-footer line. Default off. */
+  accountUsageFooterEnabled?: boolean
 
   /**
    * OpenAI Codex OAuth tokens, stored separately from Anthropic credentials.
@@ -736,6 +738,7 @@ function createDefaultGlobalConfig(): GlobalConfig {
     copyFullResponse: false,
     autoAccountFailover: false,
     autoAccountFailoverThreshold: 0.95,
+    accountUsageFooterEnabled: false,
   }
 }
 
@@ -782,6 +785,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'remoteDialogSeen',
   'autoAccountFailover',
   'autoAccountFailoverThreshold',
+  'accountUsageFooterEnabled',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
