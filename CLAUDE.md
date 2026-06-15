@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working notes are local-only
+
+Roadmap, planning, and investigation Markdown files are local working notes and
+must NOT be committed. `.gitignore` covers `*_ROADMAP.md`, `*_PLAN.md`, and
+`*_INVESTIGATION.md`. When you create any such doc, name it to match one of
+these patterns (or add its pattern to `.gitignore`) so it stays untracked. This
+applies to all agents and sessions.
+
 ## Common commands
 
 ```bash

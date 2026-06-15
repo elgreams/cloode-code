@@ -3,8 +3,10 @@ dist/
 cli
 cli-dev
 openclaw/
-DYNAMIC_MODEL_SWITCHING_PLAN.md
-DYNAMIC_MODEL_SWITCHING_ROADMAP.md
-PLAYWRIGHT_BROWSER_PLAN.md
-OPENAI_PROVIDER_ROADMAP.md
 SESSION_MEMORY.md
+
+# Roadmap / planning / investigation docs are local-only working notes — not
+# checked in. Any new *_ROADMAP / *_PLAN / *_INVESTIGATION .md belongs here.
+*_ROADMAP.md
+*_PLAN.md
+*_INVESTIGATION.md
