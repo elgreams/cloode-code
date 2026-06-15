@@ -15,6 +15,7 @@ import {
   getIsNonInteractiveSession,
   preferThirdPartyAuthentication,
 } from '../bootstrap/state.js'
+import { syncActiveAccountTokens } from './accountSwitch.js'
 import {
   getMockSubscriptionType,
   shouldUseMockSubscription,
@@ -1233,6 +1234,14 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
 
     if (updateStatus.success) {
       logEvent('tengu_oauth_tokens_saved', { storageBackend })
+      // Keep the active multi-account snapshot in sync so a token refresh
+      // doesn't leave the saved copy stale (see accountSwitch.ts). Guarded:
+      // never let this break the primary save path.
+      try {
+        syncActiveAccountTokens(storageData.claudeAiOauth)
+      } catch (syncError) {
+        logError(syncError)
+      }
     } else {
       logEvent('tengu_oauth_tokens_save_failed', { storageBackend })
     }

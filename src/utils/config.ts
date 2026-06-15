@@ -233,6 +233,32 @@ export type GlobalConfig = {
   oauthAccount?: AccountInfo
 
   /**
+   * Saved Anthropic accounts for multi-account switching (see /account).
+   * Each entry snapshots a full claudeAiOauth token block plus a user label.
+   * Switching writes the chosen block into the secure-storage claudeAiOauth
+   * slot. Stored here (not migrated into secure storage) so the feature is
+   * additive and reversible — the live single-account slot is untouched.
+   */
+  savedAnthropicAccounts?: {
+    id: string
+    label: string
+    /** Snapshot of the secure-storage claudeAiOauth block. */
+    tokens: {
+      accessToken: string
+      refreshToken: string
+      expiresAt: number
+      scopes?: string[]
+      subscriptionType?: string | null
+      rateLimitTier?: string | null
+    }
+    /** Profile info captured at save time, for display. */
+    accountEmail?: string
+    addedAt: number
+  }[]
+  /** id of the saved account currently written into the live slot. */
+  activeAnthropicAccountId?: string
+
+  /**
    * OpenAI Codex OAuth tokens, stored separately from Anthropic credentials.
    * These are acquired via the Codex OAuth flow (auth.openai.com) and are used
    * as Bearer tokens against OpenAI's API — they are never sent to Anthropic servers.
