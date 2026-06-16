@@ -4,7 +4,7 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from '../../services/analytics/index.js'
-import { queryHaiku } from '../../services/api/claude.js'
+import { queryHaiku, queryWithModel } from '../../services/api/claude.js'
 import { AbortError } from '../../utils/errors.js'
 import { getWebFetchUserAgent } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
@@ -12,6 +12,7 @@ import {
   isBinaryContentType,
   persistBinaryContent,
 } from '../../utils/mcpOutputStorage.js'
+import { getGlobalConfig } from '../../utils/config.js'
 import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { isPreapprovedHost } from './preapproved.js'
@@ -500,18 +501,30 @@ export async function applyPromptToMarkdown(
     prompt,
     isPreapprovedDomain,
   )
-  const assistantMessage = await queryHaiku({
-    systemPrompt: asSystemPrompt([]),
-    userPrompt: modelPrompt,
-    signal,
-    options: {
-      querySource: 'web_fetch_apply',
-      agents: [],
-      isNonInteractiveSession,
-      hasAppendSystemPrompt: false,
-      mcpTools: [],
-    },
-  })
+  const webFetchModel = getGlobalConfig().webFetchModel
+  const queryOptions = {
+    querySource: 'web_fetch_apply',
+    agents: [],
+    isNonInteractiveSession,
+    hasAppendSystemPrompt: false,
+    mcpTools: [],
+  }
+  const assistantMessage = webFetchModel
+    ? await queryWithModel({
+        systemPrompt: asSystemPrompt([]),
+        userPrompt: modelPrompt,
+        signal,
+        options: {
+          ...queryOptions,
+          model: webFetchModel,
+        },
+      })
+    : await queryHaiku({
+        systemPrompt: asSystemPrompt([]),
+        userPrompt: modelPrompt,
+        signal,
+        options: queryOptions,
+      })
 
   // We need to bubble this up, so that the tool call throws, causing us to return
   // an is_error tool_use block to the server, and render a red dot in the UI.

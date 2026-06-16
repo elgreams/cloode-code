@@ -384,6 +384,9 @@ export type GlobalConfig = {
   companionMuted?: boolean
   companionModel?: string
 
+  // Model used to summarize/extract WebFetch results. Undefined uses default Haiku.
+  webFetchModel?: string
+
   // Feedback survey tracking
   feedbackSurveyState?: {
     lastShownTime?: number
