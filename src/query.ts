@@ -1381,17 +1381,27 @@ async function* queryLoop(
       // config flag (default on). Claude/Codex never reach this — their loop
       // exit means they're actually done.
       const lastAssistant = assistantMessages.at(-1)
-      const hadText =
-        lastAssistant?.type === 'assistant' &&
-        !lastAssistant.isApiErrorMessage &&
-        lastAssistant.message.content.some(
-          b => b.type === 'text' && b.text.trim().length > 0,
-        )
+      const assistantTextBlocks =
+        lastAssistant?.type === 'assistant' && !lastAssistant.isApiErrorMessage
+          ? lastAssistant.message.content.filter(
+              b => b.type === 'text' && b.text.trim().length > 0,
+            )
+          : []
+      const hadText = assistantTextBlocks.length > 0
+      // Don't nudge when the model's closing text is a question — that's a
+      // genuine decision point handed back to the user (e.g. "Would you like me
+      // to start implementing this?"), not a weak-model stall. Auto-answering it
+      // does unrequested work; stopping so the user can reply is the safe call.
+      const lastTextBlock = assistantTextBlocks.at(-1)
+      const endsWithQuestion =
+        lastTextBlock?.type === 'text' &&
+        lastTextBlock.text.trim().endsWith('?')
       const autoContinueEnabled =
         getGlobalConfig().openAICompatAutoContinue !== false
       if (
         autoContinueEnabled &&
         hadText &&
+        !endsWithQuestion &&
         emptyTurnNudges < MAX_EMPTY_TURN_NUDGES &&
         isOpenAICompatModel(toolUseContext.options.mainLoopModel)
       ) {
