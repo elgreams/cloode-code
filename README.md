@@ -408,6 +408,23 @@ Run `/help` in the REPL for the full command list. Cloode Code keeps all of Clau
 | `/color` | Recolor the startup banner border + the Clawd figure (`/color cyan`, `/color #ff8800`, `/color reset`) |
 | `/buddy` | Hatch a terminal companion (the April Fools easter egg): `pet`, `rename`, `release`, `mute` |
 
+**Model routing commands**
+
+Cloode Code adds fine-grained control over which model handles each type of work — useful for managing weekly usage limits or for non-Anthropic accounts that need to point cheap calls at a different model.
+
+| Command | What it controls |
+|---|---|
+| `/model` | The main interactive chat model (Opus, Sonnet, etc.) — unchanged from upstream |
+| `/lowusage [model\|off]` | Routes expensive *background* calls (inherit subagents, permission classifier, permission explainer) to a cheaper model you pick. Main chat model stays untouched. Pick a model with `/lowusage model`, disable with `/lowusage off`. |
+| `/smallfastmodel [model\|default]` | Overrides the small/fast model used for cheap side-channel calls: session titles, tool-use summaries, web-fetch extraction, buddy quips, hooks. Useful if you're on a non-Anthropic provider and the default Haiku isn't available. `ANTHROPIC_SMALL_FAST_MODEL` env var still wins if set. |
+| `/webfetch model` | Overrides the model used specifically for web page summarization/extraction (the WebFetch tool). Defaults to the small/fast model. |
+| `/buddy model` | Overrides the model used for companion quips only. Also defaults to the small/fast model. |
+
+The precedence stack for any given call type:
+```
+env var  →  per-command override  →  /lowusage or /smallfastmodel  →  built-in default
+```
+
 **Inherited Claude Code essentials** (all working)
 
 | Area | How |
