@@ -24,6 +24,7 @@ import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
 } from 'src/utils/model/providers.js'
+import { isOpenAICompatModel } from './openai-compat/registry.js'
 import {
   getAttributionHeader,
   getCLISyspromptPrefix,
@@ -1871,9 +1872,15 @@ async function* queryModel(
     // kill hung streams. Without this, a silently dropped connection can hang
     // the session indefinitely since the SDK's request timeout only covers the
     // initial fetch(), not the streaming body.
-    const streamWatchdogEnabled = isEnvTruthy(
-      process.env.CLAUDE_ENABLE_STREAM_WATCHDOG,
-    )
+    // Default the idle watchdog ON for openai-compat models (NIM, OpenRouter,
+    // vLLM, Ollama, …). Their free/community endpoints can accept a request,
+    // send one opening chunk, then silently stall forever — and unlike the
+    // first-party SDK there's no server-side keepalive to break the hang. The
+    // env var still force-enables it for any model (and is the only way to turn
+    // it on for Claude/Codex, whose behavior is otherwise unchanged).
+    const streamWatchdogEnabled =
+      isEnvTruthy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG) ||
+      isOpenAICompatModel(options.model)
     const STREAM_IDLE_TIMEOUT_MS =
       parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) || 90_000
     const STREAM_IDLE_WARNING_MS = STREAM_IDLE_TIMEOUT_MS / 2
