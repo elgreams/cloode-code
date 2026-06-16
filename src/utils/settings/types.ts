@@ -861,14 +861,47 @@ export const SettingsSchema = lazySchema(() =>
               ),
           }
         : {}),
-      ...(feature('VOICE_MODE')
-        ? {
-            voiceEnabled: z
-              .boolean()
-              .optional()
-              .describe('Enable voice mode (hold-to-talk dictation)'),
-          }
-        : {}),
+      voiceEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable voice mode (hold-to-talk dictation)'),
+      voiceSttUrl: z
+        .string()
+        .optional()
+        .describe(
+          'OpenAI-compatible speech-to-text endpoint for voice dictation ' +
+            '(e.g. a local whisper.cpp/faster-whisper server, or a hosted ' +
+            '/v1/audio/transcriptions URL). Overridden by VOICE_STT_URL.',
+        ),
+      voiceSttModel: z
+        .string()
+        .optional()
+        .describe(
+          'Model name sent to the speech-to-text endpoint (default "whisper-1"). ' +
+            'Overridden by VOICE_STT_MODEL.',
+        ),
+      voiceSttApiKey: z
+        .string()
+        .optional()
+        .describe(
+          'Optional bearer token for the speech-to-text endpoint (for hosted ' +
+            'providers like OpenAI/Groq). Overridden by VOICE_STT_API_KEY.',
+        ),
+      voiceSttBinary: z
+        .string()
+        .optional()
+        .describe(
+          'Optional path to a local whisper.cpp binary. When set, voice ' +
+            'dictation transcribes fully offline via this binary instead of ' +
+            'the HTTP endpoint. Overridden by VOICE_STT_BINARY.',
+        ),
+      voiceSttModelPath: z
+        .string()
+        .optional()
+        .describe(
+          'Path to the whisper.cpp model file (.bin) used with voiceSttBinary. ' +
+            'Overridden by VOICE_STT_MODEL_PATH.',
+        ),
       ...(feature('KAIROS')
         ? {
             assistant: z

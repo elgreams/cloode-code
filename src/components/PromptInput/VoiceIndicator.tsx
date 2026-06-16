@@ -1,5 +1,4 @@
 import { c as _c } from "react/compiler-runtime";
-import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { useSettings } from '../../hooks/useSettings.js';
 import { Box, Text, useAnimationFrame } from '../../ink.js';
@@ -23,9 +22,6 @@ const PULSE_PERIOD_S = 2; // 2 second period for all pulsing animations
 
 export function VoiceIndicator(props) {
   const $ = _c(2);
-  if (!feature("VOICE_MODE")) {
-    return null;
-  }
   let t0;
   if ($[0] !== props) {
     t0 = <VoiceIndicatorImpl {...props} />;
@@ -77,9 +73,6 @@ function VoiceIndicatorImpl(t0) {
 // 30-80ms, compounding re-renders during an already-busy window.
 export function VoiceWarmupHint() {
   const $ = _c(1);
-  if (!feature("VOICE_MODE")) {
-    return null;
-  }
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = <Text dimColor={true}>keep holding…</Text>;

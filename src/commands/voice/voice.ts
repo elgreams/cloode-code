@@ -2,7 +2,6 @@ import { normalizeLanguageForSTT } from '../../hooks/useVoice.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { logEvent } from '../../services/analytics/index.js'
 import type { LocalCommandCall } from '../../types/command.js'
-import { isAnthropicAuthEnabled } from '../../utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { settingsChangeDetector } from '../../utils/settings/changeDetector.js'
 import {
@@ -13,18 +12,57 @@ import { isVoiceModeEnabled } from '../../voice/voiceModeEnabled.js'
 
 const LANG_HINT_MAX_SHOWS = 2
 
-export const call: LocalCommandCall = async () => {
-  // Check auth and kill-switch before allowing voice mode
-  if (!isVoiceModeEnabled()) {
-    // Differentiate: OAuth-less users get an auth hint, everyone else
-    // gets nothing (command shouldn't be reachable when the kill-switch is on).
-    if (!isAnthropicAuthEnabled()) {
+// Ensure an offline whisper engine is ready before enabling voice. Returns:
+//   - null            → nothing to do (already provisioned, or user supplied
+//                        their own STT endpoint/binary).
+//   - { fatal: true } → provisioning is required on this platform but failed;
+//                        the message explains the next step (e.g. install brew
+//                        whisper-cpp on macOS).
+// Non-fatal failures (network blip) are swallowed: transcribePcm will retry the
+// download lazily on first use, so we don't block enabling over a transient.
+async function ensureSpeechEngineReady(): Promise<{
+  fatal: boolean
+  message: string
+} | null> {
+  // Honor an explicitly configured endpoint/binary — don't override it.
+  const userConfiguredEndpoint =
+    process.env.VOICE_STT_URL ||
+    process.env.VOICE_STT_BINARY ||
+    getInitialSettings().voiceSttUrl ||
+    getInitialSettings().voiceSttBinary
+  if (userConfiguredEndpoint) return null
+
+  const { isWhisperProvisioned, provisionWhisper } = await import(
+    '../../services/whisperProvision.js'
+  )
+  if (isWhisperProvisioned()) return null
+
+  // macOS has no prebuilt engine; provisionWhisper resolves brew's whisper-cli
+  // if present, else returns null. Give a precise hint in that case.
+  try {
+    const result = await provisionWhisper()
+    if (result) return null
+    if (process.platform === 'darwin') {
       return {
-        type: 'text' as const,
-        value:
-          'Voice mode requires a Claude.ai account. Please run /login to sign in.',
+        fatal: true,
+        message:
+          'Voice mode needs an offline speech engine. On macOS, install it with:\n  brew install whisper-cpp\nThen run /voice again. (Alternatively, set voiceSttUrl in /config to use a remote transcription endpoint.)',
       }
     }
+    return {
+      fatal: true,
+      message:
+        'Voice mode could not set up an offline speech engine for this platform. Set voiceSttUrl in /config to use a transcription endpoint instead.',
+    }
+  } catch {
+    // Transient download failure — enable anyway; first use retries lazily.
+    return null
+  }
+}
+
+export const call: LocalCommandCall = async () => {
+  // Kill-switch check (voice has no auth requirement — it runs locally).
+  if (!isVoiceModeEnabled()) {
     return {
       type: 'text' as const,
       value: 'Voice mode is not available.',
@@ -55,9 +93,6 @@ export const call: LocalCommandCall = async () => {
   }
 
   // Toggle ON — run pre-flight checks first
-  const { isVoiceStreamAvailable } = await import(
-    '../../services/voiceStreamSTT.js'
-  )
   const { checkRecordingAvailability } = await import('../../services/voice.js')
 
   // Check recording availability (microphone access)
@@ -67,15 +102,6 @@ export const call: LocalCommandCall = async () => {
       type: 'text' as const,
       value:
         recording.reason ?? 'Voice mode is not available in this environment.',
-    }
-  }
-
-  // Check for API key
-  if (!isVoiceStreamAvailable()) {
-    return {
-      type: 'text' as const,
-      value:
-        'Voice mode requires a Claude.ai account. Please run /login to sign in.',
     }
   }
 
@@ -109,6 +135,15 @@ export const call: LocalCommandCall = async () => {
       type: 'text' as const,
       value: `Microphone access is denied. To enable it, go to ${guidance}, then run /voice again.`,
     }
+  }
+
+  // Provision the offline speech engine on first enable so the first
+  // hold-to-talk doesn't stall on a ~140MB download. Skipped automatically
+  // when already downloaded or when the user configured their own STT endpoint
+  // (VOICE_STT_URL / voiceSttUrl) or binary.
+  const provisionNote = await ensureSpeechEngineReady()
+  if (provisionNote?.fatal) {
+    return { type: 'text' as const, value: provisionNote.message }
   }
 
   // All checks passed — enable voice

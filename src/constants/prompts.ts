@@ -55,6 +55,7 @@ import {
   DANGEROUS_uncachedSystemPromptSection,
   resolveSystemPromptSections,
 } from './systemPromptSections.js'
+import { isOpenAICompatModel } from '../services/api/openai-compat/registry.js'
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 import { TICK_TAG } from './xml.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -484,6 +485,7 @@ ${CYBER_RISK_INSTRUCTION}`,
         : getMcpInstructionsSection(mcpClients),
       getScratchpadInstructions(),
       getFunctionResultClearingSection(model),
+      getOpenAICompatAgentDisciplineSection(model),
       SUMMARIZE_TOOL_RESULTS_SECTION,
       getProactiveSection(),
     ].filter(s => s !== null)
@@ -521,6 +523,9 @@ ${CYBER_RISK_INSTRUCTION}`,
     ),
     systemPromptSection('scratchpad', () => getScratchpadInstructions()),
     systemPromptSection('frc', () => getFunctionResultClearingSection(model)),
+    systemPromptSection('openai_compat_agent_discipline', () =>
+      getOpenAICompatAgentDisciplineSection(model),
+    ),
     systemPromptSection(
       'summarize_tool_results',
       () => SUMMARIZE_TOOL_RESULTS_SECTION,
@@ -827,6 +832,26 @@ function getFunctionResultClearingSection(model: string): string | null {
   return `# Function Result Clearing
 
 Old tool results will be automatically cleared from context to free up space. The ${config.keepRecent} most recent results are always kept.`
+}
+
+// Weak OpenAI-compatible tool-callers (notably NIM Qwen) need an explicit
+// completion contract: they tend to either stop after one step / hand control
+// back early, OR sprawl into unrequested work. The Claude Code prompt assumes a
+// frontier model and gives no such guidance. Scoped to openai-compat models so
+// Claude/Codex behavior is untouched. Ordered deliberately — license multi-step
+// completion FIRST (a weak model told only "do nothing extra" tends to
+// under-do), then cap scope, then define the stop contract.
+function getOpenAICompatAgentDisciplineSection(model: string): string | null {
+  if (!isOpenAICompatModel(model)) {
+    return null
+  }
+  return `# Working in the agent loop
+
+You are running inside a tool-use agent loop.
+- Carry out the user's request from start to finish. A request may need several steps and tool calls — keep going until the whole thing is actually done. Don't stop after one step or hand control back early.
+- When you decide to act (edit a file, run a command), make the tool call in the same turn. Never describe an action without performing it, and never end a turn having only planned the next step.
+- Stay within the request. Don't invent extra files, features, or tasks it didn't ask for. If you think extra work would help, finish what was asked first, then mention it in your summary instead of doing it.
+- When the request is fully done, write a short summary of what you changed and stop.`
 }
 
 const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`

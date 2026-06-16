@@ -1376,10 +1376,11 @@ async function* queryLoop(
       // so needsFollowUp is false and the agent stalls waiting for the user.
       // When that happens on an openai-compat model, inject a meta nudge and
       // loop again (bounded by MAX_EMPTY_TURN_NUDGES so a genuinely-finished
-      // model isn't pestered forever). Scoped three ways: only openai-compat
-      // models, only when the turn has real text but no tool use, and behind a
-      // config flag (default on). Claude/Codex never reach this — their loop
-      // exit means they're actually done.
+      // model isn't pestered forever). Also covers the fully-empty /
+      // thinking-only turn — no text and no tool call — which to the user reads
+      // as "I prompted it and nothing happened". Scoped two ways: only
+      // openai-compat models and behind a config flag (default on).
+      // Claude/Codex never reach this — their loop exit means they're done.
       const lastAssistant = assistantMessages.at(-1)
       const assistantTextBlocks =
         lastAssistant?.type === 'assistant' && !lastAssistant.isApiErrorMessage
@@ -1398,10 +1399,20 @@ async function* queryLoop(
         lastTextBlock.text.trim().endsWith('?')
       const autoContinueEnabled =
         getGlobalConfig().openAICompatAutoContinue !== false
+      // Two distinct stalls share one nudge budget:
+      //  1. text-but-no-tool — the model narrated the next action but never
+      //     emitted the tool call (skipped when the closing text is a question).
+      //  2. fully-empty / thinking-only — the model ended the turn with no text
+      //     and no tool call at all (e.g. reasoning_content surfaced as a
+      //     thinking block but nothing actionable). To the user this looks like
+      //     "I prompted it and nothing happened." A shared emptyTurnNudges
+      //     budget is deliberate: separate budgets would let a flapping model
+      //     burn 2*MAX continuations per stall.
+      const shouldNudgeText = hadText && !endsWithQuestion
+      const shouldNudgeEmpty = !hadText
       if (
         autoContinueEnabled &&
-        hadText &&
-        !endsWithQuestion &&
+        (shouldNudgeText || shouldNudgeEmpty) &&
         emptyTurnNudges < MAX_EMPTY_TURN_NUDGES &&
         isOpenAICompatModel(toolUseContext.options.mainLoopModel)
       ) {
@@ -1409,18 +1420,28 @@ async function* queryLoop(
         logForDebugging(
           `[openai-compat] empty-turn nudge #${emptyTurnNudges} ` +
             `(${toolUseContext.options.mainLoopModel}) — assistant ended with ` +
-            `text and no tool call`,
+            (shouldNudgeText
+              ? 'text and no tool call'
+              : 'no text and no tool call'),
         )
+        // The empty-case message must not assert the turn was literally blank —
+        // a thinking-only turn does have content, just nothing actionable.
+        const nudgeContent = shouldNudgeText
+          ? 'Continue working on the task. If you described an action, ' +
+            'perform it now by calling the appropriate tool rather than ' +
+            'only describing it. If the task is fully complete, briefly ' +
+            'say so.'
+          : 'You ended your turn without calling a tool or giving an ' +
+            'answer. If the task still needs work, take the next concrete ' +
+            'action now by calling the appropriate tool — don\'t just plan ' +
+            'it. If the task is fully done, reply with a one-line summary of ' +
+            'what you changed. Don\'t stop silently.'
         state = {
           messages: [
             ...messagesForQuery,
             ...assistantMessages,
             createUserMessage({
-              content:
-                'Continue working on the task. If you described an action, ' +
-                'perform it now by calling the appropriate tool rather than ' +
-                'only describing it. If the task is fully complete, briefly ' +
-                'say so.',
+              content: nudgeContent,
               isMeta: true,
             }),
           ],

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -110,10 +109,9 @@ export const ConfigTool = buildTool({
   renderToolUseRejectedMessage,
   async call({ setting, value }: Input, context): Promise<{ data: Output }> {
     // 1. Check if setting is supported
-    // Voice settings are registered at build-time (feature('VOICE_MODE')), but
-    // must also be gated at runtime. When the kill-switch is on, treat
-    // voiceEnabled as an unknown setting so no voice-specific strings leak.
-    if (feature('VOICE_MODE') && setting === 'voiceEnabled') {
+    // Voice settings must be gated at runtime. When the kill-switch is on,
+    // treat voiceEnabled as an unknown setting so no voice-specific strings leak.
+    if (setting === 'voiceEnabled') {
       const { isVoiceGrowthBookEnabled } = await import(
         '../../voice/voiceModeEnabled.js'
       )
@@ -229,28 +227,18 @@ export const ConfigTool = buildTool({
     }
 
     // Pre-flight checks for voice mode
-    if (
-      feature('VOICE_MODE') &&
-      setting === 'voiceEnabled' &&
-      finalValue === true
-    ) {
+    if (setting === 'voiceEnabled' && finalValue === true) {
       const { isVoiceModeEnabled } = await import(
         '../../voice/voiceModeEnabled.js'
       )
       if (!isVoiceModeEnabled()) {
-        const { isAnthropicAuthEnabled } = await import('../../utils/auth.js')
         return {
           data: {
             success: false,
-            error: !isAnthropicAuthEnabled()
-              ? 'Voice mode requires a Claude.ai account. Please run /login to sign in.'
-              : 'Voice mode is not available.',
+            error: 'Voice mode is not available.',
           },
         }
       }
-      const { isVoiceStreamAvailable } = await import(
-        '../../services/voiceStreamSTT.js'
-      )
       const {
         checkRecordingAvailability,
         checkVoiceDependencies,
@@ -265,15 +253,6 @@ export const ConfigTool = buildTool({
             error:
               recording.reason ??
               'Voice mode is not available in this environment.',
-          },
-        }
-      }
-      if (!isVoiceStreamAvailable()) {
-        return {
-          data: {
-            success: false,
-            error:
-              'Voice mode requires a Claude.ai account. Please run /login to sign in.',
           },
         }
       }
@@ -345,7 +324,7 @@ export const ConfigTool = buildTool({
       // 5a. Voice needs notifyChange so applySettingsChange resyncs
       // AppState.settings (useVoiceEnabled reads settings.voiceEnabled)
       // and the settings cache resets for the next /voice read.
-      if (feature('VOICE_MODE') && setting === 'voiceEnabled') {
+      if (setting === 'voiceEnabled') {
         const { settingsChangeDetector } = await import(
           '../../utils/settings/changeDetector.js'
         )

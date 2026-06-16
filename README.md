@@ -246,10 +246,10 @@ bun build
 
 | Command | Output | Features | Description |
 |---|---|---|---|
-| `bun run build` | `./cli` | defaults (`VOICE_MODE`, `BUDDY`) | Production-like binary |
-| `bun run build:dev` | `./cli-dev` | defaults (`VOICE_MODE`, `BUDDY`) | Dev version stamp |
-| `bun run build:dev:full` | `./cli-dev` | defaults + the 36-flag working bundle | Full unlock build |
-| `bun run compile` | `./dist/cli` | defaults (`VOICE_MODE`, `BUDDY`) | Alternative output path |
+| `bun run build` | `./cli` | defaults (`BUDDY`) | Production-like binary |
+| `bun run build:dev` | `./cli-dev` | defaults (`BUDDY`) | Dev version stamp |
+| `bun run build:dev:full` | `./cli-dev` | defaults + the working flag bundle | Full unlock build |
+| `bun run compile` | `./dist/cli` | defaults (`BUDDY`) | Alternative output path |
 
 > All builds also embed the platform's ripgrep (self-extracts on first use) so file search works with no external `rg`. On Windows, `compile`/`--target=windows` produce a single `.exe`.
 
@@ -434,7 +434,6 @@ The `bun run build:dev:full` build enables the 36-flag working bundle (of the 55
 |---|---|
 | `ULTRAPLAN` | Remote multi-agent planning on Claude Code web (Opus-class) |
 | `ULTRATHINK` | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
-| `VOICE_MODE` | Push-to-talk voice input and dictation |
 | `TOKEN_BUDGET` | Token budget tracking and usage warnings |
 | `HISTORY_PICKER` | Interactive prompt history picker |
 | `MESSAGE_ACTIONS` | Message action entrypoints in the UI |

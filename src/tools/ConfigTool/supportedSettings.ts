@@ -141,15 +141,38 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
         },
       }
     : {}),
-  ...(feature('VOICE_MODE')
-    ? {
-        voiceEnabled: {
-          source: 'settings' as const,
-          type: 'boolean' as const,
-          description: 'Enable voice dictation (hold-to-talk)',
-        },
-      }
-    : {}),
+  voiceEnabled: {
+    source: 'settings',
+    type: 'boolean',
+    description: 'Enable voice dictation (hold-to-talk)',
+  },
+  voiceSttUrl: {
+    source: 'settings',
+    type: 'string',
+    description:
+      'OpenAI-compatible speech-to-text endpoint for voice dictation (e.g. a local whisper server URL)',
+  },
+  voiceSttModel: {
+    source: 'settings',
+    type: 'string',
+    description: 'Model name sent to the speech-to-text endpoint (default "whisper-1")',
+  },
+  voiceSttApiKey: {
+    source: 'settings',
+    type: 'string',
+    description: 'Optional bearer token for the speech-to-text endpoint',
+  },
+  voiceSttBinary: {
+    source: 'settings',
+    type: 'string',
+    description:
+      'Optional path to a local whisper.cpp binary for fully-offline voice dictation',
+  },
+  voiceSttModelPath: {
+    source: 'settings',
+    type: 'string',
+    description: 'Path to the whisper.cpp model file (.bin) used with voiceSttBinary',
+  },
   ...(feature('BRIDGE_MODE')
     ? {
         remoteControlAtStartup: {

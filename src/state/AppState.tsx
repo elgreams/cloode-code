@@ -1,5 +1,4 @@
 import { c as _c } from "react/compiler-runtime";
-import { feature } from 'bun:bundle';
 import React, { useContext, useEffect, useEffectEvent, useState, useSyncExternalStore } from 'react';
 import { MailboxProvider } from '../context/mailbox.js';
 import { useSettingsChange } from '../hooks/useSettingsChange.js';
@@ -9,15 +8,7 @@ import { applySettingsChange } from '../utils/settings/applySettingsChange.js';
 import type { SettingSource } from '../utils/settings/constants.js';
 import { createStore } from './store.js';
 
-// DCE: voice context is ant-only. External builds get a passthrough.
-/* eslint-disable @typescript-eslint/no-require-imports */
-const VoiceProvider: (props: {
-  children: React.ReactNode;
-}) => React.ReactNode = feature('VOICE_MODE') ? require('../context/voice.js').VoiceProvider : ({
-  children
-}) => children;
-
-/* eslint-enable @typescript-eslint/no-require-imports */
+import { VoiceProvider } from '../context/voice.js';
 import { type AppState, type AppStateStore, getDefaultAppState } from './AppStateStore.js';
 
 // TODO: Remove these re-exports once all callers import directly from
