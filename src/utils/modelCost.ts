@@ -159,9 +159,13 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
  * Calculates the USD cost based on token usage and model cost configuration
  */
 function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
+  // Coalesce per-field: openai-compat providers may return a partial usage
+  // object (e.g. token counts omitted on the non-streaming fallback path).
+  // A cost calc must never throw on a missing field — that would replace the
+  // model's actual response with "undefined is not an object".
   return (
-    (usage.input_tokens / 1_000_000) * modelCosts.inputTokens +
-    (usage.output_tokens / 1_000_000) * modelCosts.outputTokens +
+    ((usage.input_tokens ?? 0) / 1_000_000) * modelCosts.inputTokens +
+    ((usage.output_tokens ?? 0) / 1_000_000) * modelCosts.outputTokens +
     ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
       modelCosts.promptCacheReadTokens +
     ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
@@ -211,6 +215,12 @@ function trackUnknownModelCost(model: string, shortName: ModelShortName): void {
 // Calculate the cost of a query in US dollars.
 // If the model's costs are not found, use the default model's costs.
 export function calculateUSDCost(resolvedModel: string, usage: Usage): number {
+  // openai-compat providers can return a response with no usage object at all
+  // (notably on the non-streaming fallback path). Bail before getModelCosts /
+  // tokensToUSDCost dereference it — a cost calc must never crash the turn.
+  if (!usage) {
+    return 0
+  }
   const modelCosts = getModelCosts(resolvedModel, usage)
   return tokensToUSDCost(modelCosts, usage)
 }
