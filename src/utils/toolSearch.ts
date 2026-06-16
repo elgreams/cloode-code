@@ -18,6 +18,7 @@ import {
   type Tools,
   toolMatchesName,
 } from '../Tool.js'
+import { isOpenAICompatModel } from '../services/api/openai-compat/registry.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import {
   formatDeferredToolLine,
@@ -237,6 +238,16 @@ function getUnsupportedToolReferencePatterns(): string[] {
  * @returns true if the model supports tool_reference, false otherwise
  */
 export function modelSupportsToolReference(model: string): boolean {
+  // OpenAI-compatible models (NIM, OpenRouter, vLLM, Ollama, …) never support
+  // tool_reference: it is an Anthropic server-side beta, and the chat-completions
+  // adapter both drops betas and has no tool_reference expansion. Leaving tool
+  // search on for them defers Task*/MCP tool schemas that then never reach the
+  // model, so weak callers (e.g. Qwen) hallucinate parameters. Force standard
+  // mode (all tools inline) for these providers.
+  if (isOpenAICompatModel(model)) {
+    return false
+  }
+
   const normalizedModel = model.toLowerCase()
   const unsupportedPatterns = getUnsupportedToolReferencePatterns()
 
