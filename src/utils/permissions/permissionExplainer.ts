@@ -7,7 +7,7 @@ import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { logError } from '../log.js'
-import { getMainLoopModel } from '../model/model.js'
+import { getAuxModel, getMainLoopModel } from '../model/model.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
 
@@ -172,7 +172,7 @@ ${conversationContext ? `\nRecent conversation context:\n${conversationContext}`
 
 Explain this command in context.`
 
-    const model = getMainLoopModel()
+    const model = getAuxModel() ?? getMainLoopModel()
 
     // Use sideQuery with forced tool choice for guaranteed structured output
     const response = await sideQuery({

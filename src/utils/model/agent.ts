@@ -8,6 +8,7 @@ import {
   parseUserSpecifiedModel,
 } from './model.js'
 import { getAPIProvider } from './providers.js'
+import { getGlobalConfig } from '../config.js'
 
 export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
 export type AgentModelAlias = (typeof AGENT_MODEL_OPTIONS)[number]
@@ -20,10 +21,12 @@ export type AgentModelOption = {
 
 /**
  * Get the default subagent model. Returns 'inherit' so subagents inherit
- * the model from the parent thread.
+ * the model from the parent thread. When low-usage mode is on (/lowusage),
+ * agents that don't pin their own model are routed to the cheaper aux model
+ * instead of inheriting the (expensive) parent model.
  */
 export function getDefaultSubagentModel(): string {
-  return 'inherit'
+  return getGlobalConfig().auxModel ?? 'inherit'
 }
 
 /**

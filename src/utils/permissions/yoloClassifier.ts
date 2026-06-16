@@ -28,7 +28,7 @@ import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { extractTextContent } from '../messages.js'
 import { resolveAntModel } from '../model/antModels.js'
-import { getMainLoopModel } from '../model/model.js'
+import { getAuxModel, getMainLoopModel } from '../model/model.js'
 import { getAutoModeConfig } from '../settings/settings.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
@@ -1343,7 +1343,8 @@ function getClassifierModel(): string {
   if (config?.model) {
     return config.model
   }
-  return getMainLoopModel()
+  // Low-usage mode (/lowusage): route the classifier to the cheaper aux model.
+  return getAuxModel() ?? getMainLoopModel()
 }
 
 /**

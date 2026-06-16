@@ -63,6 +63,8 @@ import usage from './commands/usage/index.js'
 import theme from './commands/theme/index.js'
 import vim from './commands/vim/index.js'
 import webfetch from './commands/webfetch/index.js'
+import lowusage from './commands/lowusage/index.js'
+import smallfastmodel from './commands/smallfastmodel/index.js'
 import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -324,6 +326,8 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   vim,
   webfetch,
+  lowusage,
+  smallfastmodel,
   ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),

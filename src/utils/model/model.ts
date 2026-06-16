@@ -26,6 +26,7 @@ import { isEnvTruthy } from '../envUtils.js'
 import { getModelStrings, resolveOverriddenModel } from './modelStrings.js'
 import { formatModelPricing, getOpus46CostTier } from '../modelCost.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
+import { getGlobalConfig } from '../config.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider } from './providers.js'
 import { checkOpus1mAccess } from './check1mAccess.js'
@@ -39,7 +40,25 @@ export type ModelName = string
 export type ModelSetting = ModelName | ModelAlias | null
 
 export function getSmallFastModel(): ModelName {
-  return process.env.ANTHROPIC_SMALL_FAST_MODEL || getDefaultHaikuModel()
+  // Env wins (matches main-model precedence), then the user's saved override
+  // (set via /smallfastmodel — useful for non-Anthropic accounts), then Haiku.
+  return (
+    process.env.ANTHROPIC_SMALL_FAST_MODEL ||
+    getGlobalConfig().smallFastModel ||
+    getDefaultHaikuModel()
+  )
+}
+
+/**
+ * "Low usage mode" auxiliary model. When the user has enabled it via
+ * /lowusage, secondary/background LLM work (inherit subagents, compaction,
+ * session-memory, permission classifier) is routed to this cheaper model to
+ * conserve the main-model usage limit. Returns undefined when off, so call
+ * sites fall back to their normal (expensive) model resolution.
+ */
+export function getAuxModel(): ModelName | undefined {
+  const m = getGlobalConfig().auxModel
+  return m ? parseUserSpecifiedModel(m) : undefined
 }
 
 export function isNonCustomOpusModel(model: ModelName): boolean {

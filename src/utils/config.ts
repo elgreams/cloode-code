@@ -387,6 +387,17 @@ export type GlobalConfig = {
   // Model used to summarize/extract WebFetch results. Undefined uses default Haiku.
   webFetchModel?: string
 
+  // "Low usage mode": model used for secondary/background LLM work (inherit
+  // subagents, compaction, session-memory, permission classifier) to conserve
+  // the main-model usage limit. Undefined = off (each site uses its normal model).
+  auxModel?: string
+
+  // Override for the small/fast model used by cheap side-channel calls (session
+  // titles, tool-use summaries, web-fetch, buddy, etc). Lets non-Anthropic users
+  // point these at a model they can access. The ANTHROPIC_SMALL_FAST_MODEL env
+  // var still takes precedence. Undefined = default Haiku.
+  smallFastModel?: string
+
   // Feedback survey tracking
   feedbackSurveyState?: {
     lastShownTime?: number
