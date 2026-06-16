@@ -4,6 +4,7 @@ import {
   listSavedAccounts,
   removeSavedAccount,
   saveCurrentAccount,
+  setAccountExhausted,
   switchToAccount,
 } from '../../utils/accountSwitch.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
@@ -123,6 +124,15 @@ export const call: LocalCommandCall = async args => {
         return { type: 'text', value: `No saved account named "${label}".` }
       }
       const ok = switchToAccount(account.id)
+      if (ok) {
+        // Manually selecting an account is the user asserting it's usable, so
+        // clear any stale exhaustion stamp on it. Without this, a leftover
+        // exhaustedUntil (e.g. one mis-stamped by an older failover bug) makes
+        // maybeFailoverBetweenTurns treat the just-selected account as tapped
+        // out and refuse to fail over to it. Goes through the app's own write
+        // path so it sticks, unlike editing ~/.claude.json while we're running.
+        setAccountExhausted(account.id, undefined)
+      }
       return {
         type: 'text',
         value: ok

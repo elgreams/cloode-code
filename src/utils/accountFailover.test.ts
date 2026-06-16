@@ -30,6 +30,24 @@ test('a rejected (non-overage) signal reads as exhausted', () => {
   ).not.toBeNull()
 })
 
+// Regression: a stamp, once written, must not outlive the actual limit. The
+// failover listener now drives setAccountExhausted with `reset ?? undefined`,
+// so a healthy reading clears the active account's stamp (self-heal on the next
+// good response). This pins the precondition: an 'allowed' signal below the
+// threshold yields a null reset, which the listener passes as `undefined` to
+// clear the stamp. Without this, an account keeps serving requests while
+// failover still thinks it's dead, surfacing a false "all accounts exhausted".
+test('a healthy (allowed) signal yields a null reset (drives stamp clear)', () => {
+  emitStatusChange({
+    status: 'allowed',
+    unifiedRateLimitFallbackAvailable: false,
+    isUsingOverage: false,
+  })
+  expect(
+    exhaustionReset(currentLimits, getRawUtilization(), THRESHOLD),
+  ).toBeNull()
+})
+
 test('resetLimitSignal clears the signal so it no longer reads exhausted', () => {
   emitStatusChange({
     status: 'rejected',

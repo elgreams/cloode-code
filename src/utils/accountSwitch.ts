@@ -110,6 +110,19 @@ export function switchToAccount(id: string): boolean {
   // token memo leaves a stale keychain cache on macOS.
   clearOAuthTokenCache()
 
+  // Point the active pointer at the new account FIRST. resetLimitSignal() below
+  // emits a healthy status that the failover listener (onLimitsChange) reacts to
+  // by clearing the *active* account's exhaustion stamp. That must resolve to
+  // the account we're switching TO (clear its stamp — it's starting clean), not
+  // the one we're leaving (whose stamp the failover path may have just set to
+  // avoid rolling back onto it). Also restores the displayed identity:
+  // oauthAccount drives the startup banner and whoami.
+  saveGlobalConfig(cfg => ({
+    ...cfg,
+    activeAnthropicAccountId: id,
+    ...(account.account ? { oauthAccount: account.account } : {}),
+  }))
+
   // The process-global rate-limit signal (currentLimits / rawUtilization)
   // belongs to the account we're switching AWAY from. Leaving it in place lets
   // maybeFailoverBetweenTurns() read the old account's exhaustion at the next
@@ -117,15 +130,6 @@ export function switchToAccount(id: string): boolean {
   // stalls failover (every account ends up marked exhausted). Clear it so the
   // new account starts clean; its first response repopulates from fresh headers.
   resetLimitSignal()
-
-  // Restore the displayed identity too: oauthAccount drives the startup banner
-  // and whoami. Without this the new token is used but the old email shows.
-  // Persisted to GlobalConfig, so it carries into new sessions/windows.
-  saveGlobalConfig(cfg => ({
-    ...cfg,
-    activeAnthropicAccountId: id,
-    ...(account.account ? { oauthAccount: account.account } : {}),
-  }))
   return true
 }
 

@@ -76,19 +76,26 @@ export function exhaustionReset(
 }
 
 /**
- * Listener: when the active account is seen exhausted, stamp its reset time so
- * the turn-boundary switch knows the correct identity's reset (currentLimits
- * will change to the NEW account after a switch, losing the old reset
- * otherwise). Gated on the feature being on so we never write limit-state into
- * config for users who haven't opted in. setAccountExhausted is a no-op when
- * the reset is unchanged, so this won't churn the config file as limits jitter.
+ * Listener: keep the active account's exhaustion stamp in sync with the live
+ * signal. When the account is seen exhausted, stamp its reset time so the
+ * turn-boundary switch knows the correct identity's reset (currentLimits will
+ * change to the NEW account after a switch, losing the old reset otherwise).
+ * When the account is seen HEALTHY (reset == null), clear any existing stamp —
+ * otherwise a stamp, once written, outlives the actual limit: the account keeps
+ * serving requests fine but failover still treats it as dead until its reset
+ * time, and with the other account also exhausted that surfaces as a false
+ * "all accounts exhausted". Clearing on a healthy reading makes the active
+ * account self-heal on its next successful response. Gated on the feature being
+ * on so we never write limit-state into config for users who haven't opted in.
+ * setAccountExhausted is a no-op when the value is unchanged, so this won't
+ * churn the config file as limits jitter.
  */
 function onLimitsChange(limits: ClaudeAILimits): void {
   if (!failoverEnabled()) return
   const activeId = getActiveAccountId()
   if (!activeId) return
   const reset = exhaustionReset(limits, getRawUtilization(), threshold())
-  if (reset != null) setAccountExhausted(activeId, reset)
+  setAccountExhausted(activeId, reset ?? undefined)
 }
 
 statusListeners.add(onLimitsChange)
