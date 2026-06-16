@@ -196,6 +196,27 @@ export function emitStatusChange(limits: ClaudeAILimits) {
   })
 }
 
+/**
+ * Clear the process-global rate-limit signal back to its "allowed" default.
+ *
+ * `currentLimits` and `rawUtilization` are module-global and NOT per-account.
+ * After an account switch the live token points at a different identity, but
+ * these still hold the previous account's reading. The failover code reads them
+ * via exhaustionReset() at the next turn boundary and would misattribute the old
+ * account's "rejected"/high-utilization state to the freshly-switched account —
+ * stamping it exhausted and stalling failover. Callers that swap the active
+ * account must clear the signal so the new account starts from a clean slate;
+ * its first real response repopulates these from fresh headers.
+ */
+export function resetLimitSignal(): void {
+  rawUtilization = {}
+  emitStatusChange({
+    status: 'allowed',
+    unifiedRateLimitFallbackAvailable: false,
+    isUsingOverage: false,
+  })
+}
+
 async function makeTestQuery() {
   const model = getSmallFastModel()
   const anthropic = await getAnthropicClient({

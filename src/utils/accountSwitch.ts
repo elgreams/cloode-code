@@ -11,6 +11,7 @@
  * saving an account just snapshots whatever is currently in it.
  */
 import { randomUUID } from 'crypto'
+import { resetLimitSignal } from '../services/claudeAiLimits.js'
 import { clearOAuthTokenCache, getClaudeAIOAuthTokens } from './auth.js'
 import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { getSecureStorage } from './secureStorage/index.js'
@@ -108,6 +109,14 @@ export function switchToAccount(id: string): boolean {
   // getClaudeAIOAuthTokens() re-reads the slot we just wrote. Clearing only the
   // token memo leaves a stale keychain cache on macOS.
   clearOAuthTokenCache()
+
+  // The process-global rate-limit signal (currentLimits / rawUtilization)
+  // belongs to the account we're switching AWAY from. Leaving it in place lets
+  // maybeFailoverBetweenTurns() read the old account's exhaustion at the next
+  // turn boundary and stamp it onto the account we just switched TO, which
+  // stalls failover (every account ends up marked exhausted). Clear it so the
+  // new account starts clean; its first response repopulates from fresh headers.
+  resetLimitSignal()
 
   // Restore the displayed identity too: oauthAccount drives the startup banner
   // and whoami. Without this the new token is used but the old email shows.
