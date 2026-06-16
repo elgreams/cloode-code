@@ -221,6 +221,11 @@ type State = {
   pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
   stopHookActive: boolean | undefined
   turnCount: number
+  // Request-only instruction for an internal continuation retry. This is not a
+  // conversation message and must not be persisted/replayed as a user turn.
+  internalContinuationInstruction?: string
+  // Hide the normal requesting spinner for implementation-detail retries.
+  suppressRequestStart?: boolean
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
   transition: Continue | undefined
@@ -285,6 +290,8 @@ async function* queryLoop(
     hasAttemptedReactiveCompact: false,
     turnCount: 1,
     pendingToolUseSummary: undefined,
+    internalContinuationInstruction: undefined,
+    suppressRequestStart: undefined,
     transition: undefined,
   }
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
@@ -334,6 +341,8 @@ async function* queryLoop(
       pendingToolUseSummary,
       stopHookActive,
       turnCount,
+      internalContinuationInstruction,
+      suppressRequestStart,
     } = state
 
     // Skill discovery prefetch — per-iteration (uses findWritePivot guard
@@ -350,7 +359,9 @@ async function* queryLoop(
       toolUseContext,
     )
 
-    yield { type: 'stream_request_start' }
+    if (!suppressRequestStart) {
+      yield { type: 'stream_request_start' }
+    }
 
     queryCheckpoint('query_fn_entry')
 
@@ -465,6 +476,14 @@ async function* queryLoop(
     const fullSystemPrompt = asSystemPrompt(
       appendSystemContext(systemPrompt, systemContext),
     )
+    const systemPromptForRequest = internalContinuationInstruction
+      ? asSystemPrompt([
+          ...fullSystemPrompt,
+          `# Internal continuation recovery
+
+${internalContinuationInstruction}`,
+        ])
+      : fullSystemPrompt
 
     queryCheckpoint('query_autocompact_start')
     const { compactionResult, consecutiveFailures } = await deps.autocompact(
@@ -674,7 +693,7 @@ async function* queryLoop(
           queryCheckpoint('query_api_streaming_start')
           for await (const message of deps.callModel({
             messages: prependUserContext(messagesForQuery, userContext),
-            systemPrompt: fullSystemPrompt,
+            systemPrompt: systemPromptForRequest,
             thinkingConfig: toolUseContext.options.thinkingConfig,
             tools: toolUseContext.options.tools,
             signal: toolUseContext.abortController.signal,
@@ -1374,9 +1393,9 @@ async function* queryLoop(
       // Some open models (notably NIM Qwen) finish reasoning, narrate the next
       // action as plain text, then end the turn WITHOUT emitting the tool call —
       // so needsFollowUp is false and the agent stalls waiting for the user.
-      // When that happens on an openai-compat model, inject a meta nudge and
-      // loop again (bounded by MAX_EMPTY_TURN_NUDGES so a genuinely-finished
-      // model isn't pestered forever). Also covers the fully-empty /
+      // When that happens on an openai-compat model, attach a request-only
+      // internal instruction and loop again (bounded by MAX_EMPTY_TURN_NUDGES so
+      // a genuinely-finished model isn't pestered forever). Also covers the fully-empty /
       // thinking-only turn — no text and no tool call — which to the user reads
       // as "I prompted it and nothing happened". Scoped two ways: only
       // openai-compat models and behind a config flag (default on).
@@ -1394,9 +1413,22 @@ async function* queryLoop(
       // to start implementing this?"), not a weak-model stall. Auto-answering it
       // does unrequested work; stopping so the user can reply is the safe call.
       const lastTextBlock = assistantTextBlocks.at(-1)
-      const endsWithQuestion =
-        lastTextBlock?.type === 'text' &&
-        lastTextBlock.text.trim().endsWith('?')
+      const lastText =
+        lastTextBlock?.type === 'text' ? lastTextBlock.text.trim() : ''
+      const endsWithQuestion = lastText.endsWith('?')
+      // Don't auto-continue when the model is clearly handing a decision back to
+      // the user but doesn't end the final sentence with a literal question mark
+      // (e.g. "Let me know which approach you prefer and I'll get started.").
+      const isAwaitingUserDecision =
+        /\b(let me know|tell me|which (approach|option|one)|what (approach|option)|would you like|do you want|should i|shall i|if you want|if you'd like)\b/i.test(
+          lastText,
+        )
+      // Text nudges are risky because the user already saw prose. Only recover
+      // when the prose strongly looks like a missing immediate tool action.
+      const promisedImmediateToolAction =
+        /\b(i'll|i will|let me|i'm going to|i am going to)\s+(read|open|search|check|inspect|look|grep|find|edit|write|update|modify|run|execute|list|create)\b/i.test(
+          lastText,
+        )
       const autoContinueEnabled =
         getGlobalConfig().openAICompatAutoContinue !== false
       // Two distinct stalls share one nudge budget:
@@ -1408,7 +1440,11 @@ async function* queryLoop(
       //     "I prompted it and nothing happened." A shared emptyTurnNudges
       //     budget is deliberate: separate budgets would let a flapping model
       //     burn 2*MAX continuations per stall.
-      const shouldNudgeText = hadText && !endsWithQuestion
+      const shouldNudgeText =
+        hadText &&
+        promisedImmediateToolAction &&
+        !endsWithQuestion &&
+        !isAwaitingUserDecision
       const shouldNudgeEmpty = !hadText
       if (
         autoContinueEnabled &&
@@ -1425,26 +1461,23 @@ async function* queryLoop(
               : 'no text and no tool call'),
         )
         // The empty-case message must not assert the turn was literally blank —
-        // a thinking-only turn does have content, just nothing actionable.
+        // a thinking-only turn does have content, just nothing actionable. This
+        // instruction is sent as a request-only system overlay, not a user turn.
         const nudgeContent = shouldNudgeText
-          ? 'Continue working on the task. If you described an action, ' +
-            'perform it now by calling the appropriate tool rather than ' +
-            'only describing it. If the task is fully complete, briefly ' +
-            'say so.'
-          : 'You ended your turn without calling a tool or giving an ' +
-            'answer. If the task still needs work, take the next concrete ' +
-            'action now by calling the appropriate tool — don\'t just plan ' +
-            'it. If the task is fully done, reply with a one-line summary of ' +
-            'what you changed. Don\'t stop silently.'
+          ? 'You previously described an immediate tool action but ended ' +
+            'without using a tool. If exactly one concrete tool call is still ' +
+            'required to satisfy the user\'s exact request, make only that tool ' +
+            'call now. Do not expand scope, choose for the user, restate your ' +
+            'previous message, recap, apologize, or answer this instruction. If ' +
+            'no tool call is required, end the turn without adding commentary.'
+          : 'You ended your turn without calling a tool or giving an answer. ' +
+            'If exactly one concrete tool call is still required to satisfy ' +
+            'the user\'s exact request, make only that tool call now. Do not ' +
+            'expand scope, choose for the user, restate your previous message, ' +
+            'recap, apologize, or answer this instruction. If no tool call is ' +
+            'required, end the turn without adding commentary.'
         state = {
-          messages: [
-            ...messagesForQuery,
-            ...assistantMessages,
-            createUserMessage({
-              content: nudgeContent,
-              isMeta: true,
-            }),
-          ],
+          messages: [...messagesForQuery, ...assistantMessages],
           toolUseContext,
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
@@ -1453,6 +1486,8 @@ async function* queryLoop(
           pendingToolUseSummary: undefined,
           stopHookActive: undefined,
           turnCount,
+          internalContinuationInstruction: nudgeContent,
+          suppressRequestStart: true,
           transition: { reason: 'openai_compat_empty_turn_nudge' },
         }
         continue
