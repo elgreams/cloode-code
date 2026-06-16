@@ -100,6 +100,8 @@ import { applyToolResultBudget } from './utils/toolResultStorage.js'
 import { recordContentReplacement } from './utils/sessionStorage.js'
 import { handleStopHooks } from './query/stopHooks.js'
 import { buildQueryConfig } from './query/config.js'
+import { getGlobalConfig } from './utils/config.js'
+import { isOpenAICompatModel } from './services/api/openai-compat/registry.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
 import { feature } from 'bun:bundle'
@@ -162,6 +164,14 @@ function* yieldMissingToolResultBlocks(
  * rules, ye will be punished with an entire day of debugging and hair pulling.
  */
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
+
+// Max consecutive auto-continue nudges for weak OpenAI-compatible tool-callers
+// that end a turn with plain text and no tool call (e.g. NIM Qwen narrating
+// "now I'll edit the file" but never emitting the call). Bounded so a model
+// that is genuinely done is nudged at most this many times before we give the
+// turn back to the user. Resets whenever the model makes real progress (a
+// tool-using turn) or the user speaks (fresh query() => fresh state).
+const MAX_EMPTY_TURN_NUDGES = 2
 
 /**
  * Is this a max_output_tokens error message? If so, the streaming loop should
@@ -289,6 +299,12 @@ async function* queryLoop(
   // trigger point. Loop-local (not on State) to avoid touching the 7 continue
   // sites.
   let taskBudgetRemaining: number | undefined = undefined
+
+  // Consecutive empty-turn nudges issued this query (see MAX_EMPTY_TURN_NUDGES).
+  // Loop-local (like taskBudgetRemaining) to avoid threading through the State
+  // continue sites. Reset to 0 on any tool-using turn — that path returns via
+  // the bottom-of-loop next-turn state, not through here.
+  let emptyTurnNudges = 0
 
   // Snapshot immutable env/statsig/session state once at entry. See QueryConfig
   // for what's included and why feature() gates are intentionally excluded.
@@ -1354,6 +1370,63 @@ async function* queryLoop(
         }
       }
 
+      // Empty-turn auto-continue for weak OpenAI-compatible tool-callers.
+      // Some open models (notably NIM Qwen) finish reasoning, narrate the next
+      // action as plain text, then end the turn WITHOUT emitting the tool call —
+      // so needsFollowUp is false and the agent stalls waiting for the user.
+      // When that happens on an openai-compat model, inject a meta nudge and
+      // loop again (bounded by MAX_EMPTY_TURN_NUDGES so a genuinely-finished
+      // model isn't pestered forever). Scoped three ways: only openai-compat
+      // models, only when the turn has real text but no tool use, and behind a
+      // config flag (default on). Claude/Codex never reach this — their loop
+      // exit means they're actually done.
+      const lastAssistant = assistantMessages.at(-1)
+      const hadText =
+        lastAssistant?.type === 'assistant' &&
+        !lastAssistant.isApiErrorMessage &&
+        lastAssistant.message.content.some(
+          b => b.type === 'text' && b.text.trim().length > 0,
+        )
+      const autoContinueEnabled =
+        getGlobalConfig().openAICompatAutoContinue !== false
+      if (
+        autoContinueEnabled &&
+        hadText &&
+        emptyTurnNudges < MAX_EMPTY_TURN_NUDGES &&
+        isOpenAICompatModel(toolUseContext.options.mainLoopModel)
+      ) {
+        emptyTurnNudges++
+        logForDebugging(
+          `[openai-compat] empty-turn nudge #${emptyTurnNudges} ` +
+            `(${toolUseContext.options.mainLoopModel}) — assistant ended with ` +
+            `text and no tool call`,
+        )
+        state = {
+          messages: [
+            ...messagesForQuery,
+            ...assistantMessages,
+            createUserMessage({
+              content:
+                'Continue working on the task. If you described an action, ' +
+                'perform it now by calling the appropriate tool rather than ' +
+                'only describing it. If the task is fully complete, briefly ' +
+                'say so.',
+              isMeta: true,
+            }),
+          ],
+          toolUseContext,
+          autoCompactTracking: tracking,
+          maxOutputTokensRecoveryCount: 0,
+          hasAttemptedReactiveCompact: false,
+          maxOutputTokensOverride: undefined,
+          pendingToolUseSummary: undefined,
+          stopHookActive: undefined,
+          turnCount,
+          transition: { reason: 'openai_compat_empty_turn_nudge' },
+        }
+        continue
+      }
+
       return { reason: 'completed' }
     }
 
@@ -1710,6 +1783,10 @@ async function* queryLoop(
       })
       return { reason: 'max_turns', turnCount: nextTurnCount }
     }
+
+    // Real progress this turn (the model used tools) — clear the empty-turn
+    // nudge budget so a later genuine stall gets the full allowance again.
+    emptyTurnNudges = 0
 
     queryCheckpoint('query_recursive_call')
     const next: State = {

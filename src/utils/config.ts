@@ -327,6 +327,11 @@ export type GlobalConfig = {
   // Whether the browser-automation MCP server is enabled (default off).
   // Toggled by /browser; read at startup to inject the server.
   browserEnabled?: boolean
+  // Auto-continue weak OpenAI-compatible tool-callers (e.g. NIM Qwen) when they
+  // end a turn with plain text and no tool call (default on; set false to
+  // disable). Only ever affects openai-compat models — Claude/Codex are
+  // untouched. See the empty-turn nudge in query.ts.
+  openAICompatAutoContinue?: boolean
   iterm2KeyBindingInstalled?: boolean // Legacy - keeping for backward compatibility
   editorMode?: EditorMode
   bypassPermissionsModeAccepted?: boolean
