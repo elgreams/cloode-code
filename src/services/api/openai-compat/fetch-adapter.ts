@@ -223,6 +223,13 @@ export function openAIResponseToAnthropic(
   const choice = json.choices?.[0] ?? {}
   const msg = choice.message ?? {}
   const content: Array<Record<string, unknown>> = []
+  // Reasoning models (NIM Qwen, DeepSeek, …) return chain-of-thought in a
+  // separate `reasoning_content` (some gateways use `reasoning`). Surface it as
+  // a thinking block so it isn't silently dropped. Thinking precedes the answer.
+  const reasoning = msg.reasoning_content ?? msg.reasoning
+  if (typeof reasoning === 'string' && reasoning.length > 0) {
+    content.push({ type: 'thinking', thinking: reasoning, signature: '' })
+  }
   if (typeof msg.content === 'string' && msg.content.length > 0) {
     content.push({ type: 'text', text: msg.content })
   }
@@ -291,23 +298,41 @@ export function translateChatStreamToAnthropic(
       let blockIndex = -1
       let textOpen = false
       let toolOpen = false
+      let thinkingOpen = false
       let currentToolIndex = -1
       let inputTokens = 0
       let outputTokens = 0
       let finishReason: unknown = 'stop'
 
       const closeBlock = () => {
-        if (textOpen || toolOpen) {
+        if (textOpen || toolOpen || thinkingOpen) {
           enq('content_block_stop', {
             type: 'content_block_stop',
             index: blockIndex,
           })
           textOpen = false
           toolOpen = false
+          thinkingOpen = false
+        }
+      }
+      // Reasoning models stream chain-of-thought in delta.reasoning_content
+      // (some gateways: delta.reasoning) before the answer/tool call. Surface it
+      // as a thinking block so reasoning-only chunks aren't dropped (which made
+      // the turn look empty and stalled the agent loop).
+      const openThinking = () => {
+        if (!thinkingOpen) {
+          closeBlock()
+          blockIndex++
+          enq('content_block_start', {
+            type: 'content_block_start',
+            index: blockIndex,
+            content_block: { type: 'thinking', thinking: '' },
+          })
+          thinkingOpen = true
         }
       }
       const openText = () => {
-        if (toolOpen) {
+        if (toolOpen || thinkingOpen) {
           closeBlock()
         }
         if (!textOpen) {
@@ -367,6 +392,15 @@ export function translateChatStreamToAnthropic(
               continue
             }
             const delta = choice.delta ?? {}
+            const reasoning = delta.reasoning_content ?? delta.reasoning
+            if (typeof reasoning === 'string' && reasoning.length > 0) {
+              openThinking()
+              enq('content_block_delta', {
+                type: 'content_block_delta',
+                index: blockIndex,
+                delta: { type: 'thinking_delta', thinking: reasoning },
+              })
+            }
             if (typeof delta.content === 'string' && delta.content.length > 0) {
               openText()
               enq('content_block_delta', {
