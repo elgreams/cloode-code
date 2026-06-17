@@ -265,6 +265,17 @@ export function getDefaultMainLoopModel(): ModelName {
  * module top-level (see MODEL_COSTS in modelCost.ts).
  */
 export function firstPartyNameToCanonical(name: ModelName): ModelShortName {
+  // Cheap-path: every matcher below keys on the substrings 'claude' / 'gpt'. An
+  // id containing neither can never match any branch, so it is already its own
+  // canonical — return it as-is (case preserved). This avoids the provider-
+  // registry lookup (which does config I/O) for the common custom ids
+  // (nvidia/llama-*, mistral-*, …) on every canonicalize, and is identical to
+  // the previous result: such ids either matched the openai-compat guard
+  // (returned as-is) or fell through to the unchanged-name fallback.
+  const lowerForGuard = name.toLowerCase()
+  if (!lowerForGuard.includes('claude') && !lowerForGuard.includes('gpt')) {
+    return name as ModelShortName
+  }
   // Custom OpenAI-compatible provider models are their own canonical — guard
   // before the Claude/GPT pattern matching (and before lowercasing, since ids
   // can be case-sensitive) so a vendor-prefixed id like 'anthropic/claude-3.5'

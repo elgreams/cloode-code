@@ -48,21 +48,50 @@ export function getLastServedCodexModel(): string | null {
   return lastServedCodexModel
 }
 
+// How long a model stays hidden after a backend rejection. A single transient
+// 400/"not supported" shouldn't blacklist a model forever (a stale account
+// snapshot, an upstream hiccup), so the block expires and the model reappears in
+// /model, where a real rejection re-stamps it. 24h mirrors the model-cache TTL.
+const CODEX_UNSUPPORTED_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The set of currently-blocked (non-expired) unsupported Codex model ids.
+ * Tolerates the legacy `string[]` config shape by treating those entries as
+ * already expired, so old config self-clears on upgrade rather than blocking
+ * forever.
+ */
+export function activeUnsupportedCodexIds(
+  raw: ReturnType<typeof getGlobalConfig>['codexUnsupportedModels'],
+): Set<string> {
+  const now = Date.now()
+  const ids = new Set<string>()
+  for (const entry of raw ?? []) {
+    if (typeof entry === 'string') continue // legacy: no timestamp -> expired
+    if (entry && now - entry.ts < CODEX_UNSUPPORTED_TTL_MS) ids.add(entry.id)
+  }
+  return ids
+}
+
 /**
  * Persist a model id the backend rejected as unsupported for this account, so
  * the /model menu can exclude it. Writes config directly (rather than importing
- * the model helpers) to avoid an import cycle with codexModels.ts.
+ * the model helpers) to avoid an import cycle with codexModels.ts. Timestamped
+ * so the block ages out via the TTL; a repeat rejection re-stamps it. Legacy
+ * `string[]` entries are migrated to the `{id, ts}` shape on write.
  */
 function recordUnsupportedCodexModel(model: string): void {
   if (!model) return
-  const existing = getGlobalConfig().codexUnsupportedModels ?? []
-  if (existing.includes(model)) return
   logForDebugging(`Codex model '${model}' rejected as unsupported; hiding from /model`)
   saveGlobalConfig(config => {
-    const current = config.codexUnsupportedModels ?? []
-    return current.includes(model)
-      ? config
-      : { ...config, codexUnsupportedModels: [...current, model] }
+    const now = Date.now()
+    const current = (config.codexUnsupportedModels ?? []).map(e =>
+      typeof e === 'string' ? { id: e, ts: 0 } : e,
+    )
+    const others = current.filter(e => e.id !== model)
+    return {
+      ...config,
+      codexUnsupportedModels: [...others, { id: model, ts: now }],
+    }
   })
 }
 
@@ -921,10 +950,12 @@ export function createCodexFetch(
     // Graceful recovery: if the selected model was previously learned to be
     // unsupported for this account (e.g. a stale saved default that's since been
     // removed), fall back to the default model instead of 400ing again.
-    const blocked = getGlobalConfig().codexUnsupportedModels ?? []
+    const blocked = activeUnsupportedCodexIds(
+      getGlobalConfig().codexUnsupportedModels,
+    )
     if (
-      blocked.includes(codexModel) &&
-      !blocked.includes(DEFAULT_CODEX_MODEL)
+      blocked.has(codexModel) &&
+      !blocked.has(DEFAULT_CODEX_MODEL)
     ) {
       logForDebugging(
         `Codex model '${codexModel}' is known-unsupported; falling back to '${DEFAULT_CODEX_MODEL}'`,

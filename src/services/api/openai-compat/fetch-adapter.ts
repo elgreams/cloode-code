@@ -156,6 +156,34 @@ export function translateMessages(
 }
 
 // ── Full request: Anthropic body → OpenAI chat-completions body ─────
+/**
+ * Translate an Anthropic `tool_choice` into the chat-completions equivalent so a
+ * request that REQUIRED a tool call doesn't silently become optional:
+ *   - `auto`  -> `'auto'`     (model decides)
+ *   - `any`   -> `'required'` (must call some tool)
+ *   - `tool`  -> `{type:'function', function:{name}}` (must call that tool)
+ *   - `none`  -> `'none'`
+ * Defaults to `'auto'` when absent or unrecognized, preserving prior behavior.
+ */
+function translateToolChoice(
+  choice: unknown,
+): 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } } {
+  if (choice && typeof choice === 'object') {
+    const type = (choice as { type?: unknown }).type
+    if (type === 'any') return 'required'
+    if (type === 'none') return 'none'
+    if (type === 'tool') {
+      const name = (choice as { name?: unknown }).name
+      if (typeof name === 'string' && name) {
+        return { type: 'function', function: { name } }
+      }
+      // A forced-tool choice with no usable name still means "must call a tool".
+      return 'required'
+    }
+  }
+  return 'auto'
+}
+
 export function buildChatBody(
   anthropicBody: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -186,7 +214,7 @@ export function buildChatBody(
   const tools = (anthropicBody.tools as AnthropicTool[]) || []
   if (tools.length > 0) {
     body.tools = translateTools(tools)
-    body.tool_choice = 'auto'
+    body.tool_choice = translateToolChoice(anthropicBody.tool_choice)
   }
   if (stream) {
     body.stream_options = { include_usage: true }

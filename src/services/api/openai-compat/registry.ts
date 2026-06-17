@@ -2,6 +2,33 @@ import { getGlobalConfig } from '../../../utils/config.js'
 import { PROVIDER_PRESETS } from './presets.js'
 import type { OpenAICompatModel, OpenAICompatProvider } from './types.js'
 
+// How long a model stays hidden after a backend rejection. A single transient
+// 404 / "model not found" shouldn't blacklist a valid model forever, so the
+// block expires and the model reappears in /model (where a later real rejection
+// re-stamps it). 24h mirrors the discovery cache TTL.
+export const UNSUPPORTED_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The set of currently-blocked (non-expired) unsupported model ids. Tolerates
+ * the legacy `string[]` config shape by treating those entries as already
+ * expired, so old config self-clears on upgrade rather than blocking forever.
+ */
+export function activeUnsupportedOpenAICompatIds(
+  raw: ReturnType<typeof getGlobalConfig>['openAICompatUnsupportedModels'],
+): Set<string> {
+  const now = Date.now()
+  const ids = new Set<string>()
+  for (const entry of raw ?? []) {
+    if (typeof entry === 'string') {
+      continue // legacy entry: no timestamp -> treat as expired
+    }
+    if (entry && now - entry.ts < UNSUPPORTED_TTL_MS) {
+      ids.add(entry.id)
+    }
+  }
+  return ids
+}
+
 /**
  * All *active* OpenAI-compatible providers: those the user explicitly configured
  * (`config.openAICompatProviders`), plus any built-in preset whose `apiKeyEnv`
@@ -25,7 +52,9 @@ export function listProviders(): OpenAICompatProvider[] {
   ).map(p => ({ ...p, models: [...p.models] }))
 
   const cache = config.openAICompatModelCache ?? {}
-  const unsupported = new Set(config.openAICompatUnsupportedModels ?? [])
+  const unsupported = activeUnsupportedOpenAICompatIds(
+    config.openAICompatUnsupportedModels,
+  )
 
   // Merge each provider's seed models with its discovered cache (seed labels
   // win), then drop any ids the backend has rejected.

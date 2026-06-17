@@ -4,6 +4,7 @@ import { logEvent } from 'src/services/analytics/index.js'
 import { setHasUnknownModelCost } from '../bootstrap/state.js'
 import { isFastModeEnabled } from './fastMode.js'
 import { isCodexModel } from '../services/api/codex-fetch-adapter.js'
+import { isOpenAICompatModel } from '../services/api/openai-compat/registry.js'
 import {
   CLAUDE_3_5_HAIKU_CONFIG,
   CLAUDE_3_5_V2_SONNET_CONFIG,
@@ -177,8 +178,12 @@ function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
 
 export function getModelCosts(model: string, usage: Usage): ModelCosts {
   // GPT/Codex models are subscription-billed: no per-token cost, and not an
-  // "unknown" model we should warn about.
-  if (isCodexModel(model)) {
+  // "unknown" model we should warn about. Guard against custom OpenAI-compatible
+  // models whose ids match the GPT/Codex pattern (e.g. OpenRouter's
+  // `openai/gpt-4o`): those are key-billed, not a Codex subscription, so they
+  // must fall through to the normal (unknown-cost) path instead of being priced
+  // at $0.
+  if (isCodexModel(model) && !isOpenAICompatModel(model)) {
     return COST_CODEX_SUBSCRIPTION
   }
 

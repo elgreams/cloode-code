@@ -1,4 +1,5 @@
 import { c as _c } from "react/compiler-runtime";
+import { existsSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { isAbsolute, join } from 'path';
 import chalk from 'chalk';
@@ -316,10 +317,16 @@ function exportModels(onDone: (result?: string, options?: {
   } else if (target.startsWith('~/')) {
     target = join(homedir(), target.slice(2));
   }
-  if (!target.endsWith('.txt')) {
-    target = target.replace(/\.[^./\\]+$/, '') + '.txt';
+  let filepath = isAbsolute(target) ? target : join(getCwd(), target);
+  // If the user pointed at an existing directory (e.g. `~/` or `./logs/`), write
+  // a file INSIDE it rather than coercing the directory itself into a sibling
+  // `.txt` (which is what blind extension-replacement would do — `~/` ->
+  // `/home/u.txt`).
+  if (existsSync(filepath) && statSync(filepath).isDirectory()) {
+    filepath = join(filepath, 'models.txt');
+  } else if (!filepath.endsWith('.txt')) {
+    filepath = filepath.replace(/\.[^./\\]+$/, '') + '.txt';
   }
-  const filepath = isAbsolute(target) ? target : join(getCwd(), target);
   try {
     writeFileSync_DEPRECATED(filepath, content, {
       encoding: 'utf-8',

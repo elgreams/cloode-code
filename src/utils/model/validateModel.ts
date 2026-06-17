@@ -41,6 +41,18 @@ export async function validateModel(
     return { valid: true }
   }
 
+  // Custom OpenAI-compatible models (e.g. OpenRouter's `openai/gpt-4o`) can
+  // match the GPT/Codex id pattern but are key-backed by their own provider, not
+  // ChatGPT/Codex auth. Treat them as valid here — the openai-compat backend
+  // validates them on first use — so they aren't wrongly rejected for lacking
+  // Codex auth below.
+  const { isOpenAICompatModel } = await import(
+    '../../services/api/openai-compat/registry.js'
+  )
+  if (isOpenAICompatModel(normalizedModel)) {
+    return { valid: true }
+  }
+
   // GPT/Codex models are validated against Codex auth, not the Anthropic API.
   // Gating on auth (not active provider) lets users select GPT models without
   // CLAUDE_CODE_USE_OPENAI=1. The Codex backend is the source of truth for

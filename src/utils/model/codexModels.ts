@@ -10,6 +10,7 @@ import { getGlobalConfig, saveGlobalConfig } from '../config.js'
 import { hasCodexAuth } from '../auth.js'
 import {
   CODEX_MODELS,
+  activeUnsupportedCodexIds,
   fetchCodexModels,
 } from '../../services/api/codex-fetch-adapter.js'
 import { logForDebugging } from '../debug.js'
@@ -22,7 +23,7 @@ const CODEX_MODELS_TTL_MS = 24 * 60 * 60 * 1000 // 24h
  */
 export function getResolvedCodexModelIds(): string[] {
   const config = getGlobalConfig()
-  const unsupported = new Set(config.codexUnsupportedModels ?? [])
+  const unsupported = activeUnsupportedCodexIds(config.codexUnsupportedModels)
   const base = config.codexAvailableModels?.models?.length
     ? config.codexAvailableModels.models
     : CODEX_MODELS.map(m => m.id)

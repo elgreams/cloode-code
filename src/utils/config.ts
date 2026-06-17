@@ -307,14 +307,21 @@ export type GlobalConfig = {
   }
   // Model ids the Codex backend rejected as "not supported" for this account.
   // Learned from real 400 responses and excluded from the /model menu, so the
-  // list self-heals even when remote discovery is unavailable.
-  codexUnsupportedModels?: string[]
+  // list self-heals even when remote discovery is unavailable. Each entry is
+  // timestamped so a transient rejection ages out (TTL) instead of hiding a
+  // model forever; legacy `string[]` config is tolerated on read.
+  codexUnsupportedModels?: Array<{ id: string; ts: number }>
+
   // User-configured OpenAI-compatible providers (NIM, OpenRouter, vLLM, …),
   // managed by /provider. See src/services/api/openai-compat/.
   openAICompatProviders?: import('../services/api/openai-compat/types.js').OpenAICompatProvider[]
   // Model ids an OpenAI-compatible backend rejected as unsupported — self-heals
-  // the /model menu, mirroring codexUnsupportedModels.
-  openAICompatUnsupportedModels?: string[]
+  // the /model menu, mirroring codexUnsupportedModels. Each entry carries the
+  // timestamp it was last rejected so a transient 404 can age out (TTL) instead
+  // of hiding a valid model forever. Legacy `string[]` config is tolerated on
+  // read and treated as already-expired so it clears on upgrade.
+  openAICompatUnsupportedModels?: Array<{ id: string; ts: number }>
+
   // Per-provider models discovered from each backend's /v1/models endpoint,
   // keyed by provider name. Background-refreshed; merged with the seed for /model.
   openAICompatModelCache?: Record<

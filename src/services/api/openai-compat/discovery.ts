@@ -121,19 +121,30 @@ export function prefetchOpenAICompatModelsIfSafe(): void {
   void refreshAllOpenAICompatModels(false).catch(() => {})
 }
 
-/** Remember a model id the backend rejected, so the /model menu stops offering it. */
+/**
+ * Remember a model id the backend rejected, so the /model menu stops offering
+ * it. Stamped with the current time: the block expires after UNSUPPORTED_TTL_MS
+ * (see registry) so a transient 404 doesn't hide a valid model forever. A repeat
+ * rejection re-stamps the entry, extending the block; a model that has actually
+ * gone away stays hidden as long as it keeps being rejected. Legacy `string[]`
+ * entries are migrated to the `{id, ts}` shape on write.
+ */
 export function recordUnsupportedOpenAICompatModel(id: string): void {
   if (!id) {
     return
   }
   try {
     saveGlobalConfig(config => {
-      const current = config.openAICompatUnsupportedModels ?? []
-      if (current.includes(id)) {
-        return config
-      }
+      const now = Date.now()
+      const current = (config.openAICompatUnsupportedModels ?? []).map(e =>
+        typeof e === 'string' ? { id: e, ts: 0 } : e,
+      )
+      const others = current.filter(e => e.id !== id)
       logForDebugging(`[openai-compat] model '${id}' rejected; hiding from /model`)
-      return { ...config, openAICompatUnsupportedModels: [...current, id] }
+      return {
+        ...config,
+        openAICompatUnsupportedModels: [...others, { id, ts: now }],
+      }
     })
   } catch {
     // config not ready — best effort
