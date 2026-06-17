@@ -39,14 +39,34 @@ export type ModelShortName = string
 export type ModelName = string
 export type ModelSetting = ModelName | ModelAlias | null
 
+/**
+ * Whether this account can actually serve the default small/fast model (a
+ * Claude Haiku). Anthropic (firstParty), Bedrock, Vertex, and Foundry all do.
+ * Custom OpenAI-compatible endpoints, the generic `openai` provider, and
+ * ChatGPT/Codex accounts do NOT — for them, falling back to Haiku would point
+ * every cheap side-channel call (titles, summaries, web-fetch, buddy, hooks,
+ * quota probe) at a model the account can't reach.
+ */
+function canReachDefaultHaiku(): boolean {
+  return (
+    getAPIProvider() !== 'openai' &&
+    !isCodexSubscriber() &&
+    !isOpenAICompatModel(getMainLoopModel())
+  )
+}
+
 export function getSmallFastModel(): ModelName {
   // Env wins (matches main-model precedence), then the user's saved override
-  // (set via /smallfastmodel — useful for non-Anthropic accounts), then Haiku.
-  return (
-    process.env.ANTHROPIC_SMALL_FAST_MODEL ||
-    getGlobalConfig().smallFastModel ||
-    getDefaultHaikuModel()
-  )
+  // (set via /smallfastmodel — useful for non-Anthropic accounts).
+  const explicit =
+    process.env.ANTHROPIC_SMALL_FAST_MODEL || getGlobalConfig().smallFastModel
+  if (explicit) {
+    return explicit
+  }
+  // No explicit small-fast model: use Haiku when the account can serve it,
+  // otherwise fall back to the main model so non-Anthropic users' cheap calls
+  // hit a model they can actually reach.
+  return canReachDefaultHaiku() ? getDefaultHaikuModel() : getMainLoopModel()
 }
 
 /**
