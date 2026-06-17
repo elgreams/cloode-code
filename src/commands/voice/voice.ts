@@ -95,6 +95,19 @@ export const call: LocalCommandCall = async () => {
   // Toggle ON — run pre-flight checks first
   const { checkRecordingAvailability } = await import('../../services/voice.js')
 
+  // On Windows the native audio module isn't bundled in source builds, so we
+  // provision a SoX recorder before the availability check. Best-effort: a
+  // failure here isn't fatal (the user may have a system sox/rec, or native
+  // audio may load); the check below decides whether voice can actually run.
+  if (process.platform === 'win32') {
+    const { isSoxProvisioned, provisionSox } = await import(
+      '../../services/soxProvision.js'
+    )
+    if (!isSoxProvisioned()) {
+      await provisionSox().catch(() => null)
+    }
+  }
+
   // Check recording availability (microphone access)
   const recording = await checkRecordingAvailability()
   if (!recording.available) {

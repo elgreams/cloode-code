@@ -11,6 +11,7 @@ import { logForDebugging } from '../utils/debug.js'
 import { isEnvTruthy, isRunningOnHomespace } from '../utils/envUtils.js'
 import { logError } from '../utils/log.js'
 import { getPlatform } from '../utils/platform.js'
+import { getProvisionedSox } from './soxProvision.js'
 
 // Lazy-loaded native audio module. audio-capture.node links against
 // CoreAudio.framework + AudioUnit.framework; dlopen is synchronous and
@@ -230,16 +231,18 @@ export async function checkVoiceDependencies(): Promise<{
     return { available: true, missing: [], installCommand: null }
   }
 
-  // On Windows, SoX `rec` is the supported fallback when the native module
-  // can't load. If it's present we're good; otherwise point the user at it.
+  // On Windows, SoX is the supported fallback when the native module can't
+  // load. We auto-provision sox.exe on first /voice enable, but also accept a
+  // system sox/rec if the user already has one. Missing here just means
+  // provisioning hasn't run yet — the /voice command triggers it.
   if (process.platform === 'win32') {
-    if (hasCommand('rec')) {
+    if (getProvisionedSox() || hasCommand('sox') || hasCommand('rec')) {
       return { available: true, missing: [], installCommand: null }
     }
     return {
       available: false,
-      missing: ['sox (rec command)'],
-      installCommand: 'choco install sox',
+      missing: ['SoX recorder (auto-downloaded on /voice enable)'],
+      installCommand: null,
     }
   }
 
@@ -308,16 +311,12 @@ export async function checkRecordingAvailability(): Promise<RecordingAvailabilit
     return { available: true, reason: null }
   }
 
-  // On Windows, fall back to SoX `rec` when the native module can't load.
+  // On Windows, fall back to SoX when the native module can't load. The
+  // recorder (sox.exe) is auto-provisioned on first /voice enable, and a
+  // system sox/rec works too. Either way recording is considered available;
+  // if nothing is on disk yet, the /voice command downloads it before use.
   if (process.platform === 'win32') {
-    if (hasCommand('rec')) {
-      return { available: true, reason: null }
-    }
-    return {
-      available: false,
-      reason:
-        'Voice recording requires the native audio module (which could not be loaded) or SoX as a fallback.\n\nInstall SoX with: choco install sox  (or download from https://sourceforge.net/projects/sox/ and add it to PATH)',
-    }
+    return { available: true, reason: null }
   }
 
   const wslNoAudioReason =
@@ -411,14 +410,15 @@ export async function startRecording(
     // Native recording failed — fall through to platform fallbacks
   }
 
-  // On Windows, fall back to SoX `rec` (same raw-PCM path as Linux/macOS).
+  // On Windows, fall back to SoX (same raw-PCM path as Linux/macOS). Uses the
+  // auto-provisioned sox.exe, or a system sox/rec if present.
   if (process.platform === 'win32') {
-    if (hasCommand('rec')) {
-      logForDebugging('[voice] Windows native unavailable, using SoX rec')
+    if (getProvisionedSox() || hasCommand('sox') || hasCommand('rec')) {
+      logForDebugging('[voice] Windows native unavailable, using SoX')
       return startSoxRecording(onData, onEnd, options)
     }
     logForDebugging(
-      '[voice] Windows native recording unavailable, SoX rec not found',
+      '[voice] Windows native recording unavailable, SoX not found',
     )
     return false
   }
@@ -436,8 +436,25 @@ export async function startRecording(
     return startArecordRecording(onData, onEnd)
   }
 
-  // Fallback: SoX rec (Linux, or macOS if native module unavailable)
+  // Fallback: SoX (Linux/macOS via system `rec`; Windows via provisioned
+  // sox.exe, else a `rec` on PATH).
   return startSoxRecording(onData, onEnd, options)
+}
+
+// Resolve which SoX recorder to invoke. `rec` is a thin wrapper that defaults
+// the input to the system mic; bare `sox.exe` (what the Windows zip ships)
+// needs an explicit `-d` input device. Returns the executable plus any leading
+// input args to splice in before the output spec.
+function resolveSoxRecorder(): { cmd: string; inputArgs: string[] } {
+  const provisioned = getProvisionedSox()
+  if (provisioned) {
+    return { cmd: provisioned, inputArgs: ['-d'] }
+  }
+  if (process.platform === 'win32' && hasCommand('sox')) {
+    return { cmd: 'sox', inputArgs: ['-d'] }
+  }
+  // Linux/macOS (and Windows with a `rec` shim on PATH): rec implies -d.
+  return { cmd: 'rec', inputArgs: [] }
 }
 
 function startSoxRecording(
@@ -446,6 +463,7 @@ function startSoxRecording(
   options?: { silenceDetection?: boolean },
 ): boolean {
   const useSilenceDetection = options?.silenceDetection !== false
+  const { cmd, inputArgs } = resolveSoxRecorder()
 
   // Record raw PCM: 16 kHz, 16-bit signed, mono, to stdout.
   // --buffer 1024 forces SoX to flush audio in small chunks instead of
@@ -456,6 +474,7 @@ function startSoxRecording(
     '-q', // quiet
     '--buffer',
     '1024',
+    ...inputArgs, // '-d' (default mic) for bare sox; nothing for `rec`
     '-t',
     'raw',
     '-r',
@@ -483,8 +502,9 @@ function startSoxRecording(
     )
   }
 
-  const child = spawn('rec', args, {
+  const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
+    shell: process.platform === 'win32' && cmd === 'sox',
   })
 
   activeRecorder = child
