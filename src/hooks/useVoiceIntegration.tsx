@@ -643,6 +643,16 @@ export function useVoiceKeybindingHandler({
     { isActive }
   );
 
+  // Deterministically end an in-flight hold when the prompt stops being active
+  // or an overlay takes focus. Both the release channel (useKeyRelease) and the
+  // repeat fallback (handleKeyDown) are gated by `{ isActive }`/overlay, so if
+  // either flips mid-hold the physical release is dropped and the recording
+  // would only stop via the 2s first-press fallback (~2.2s of stray audio).
+  // voiceStopHold no-ops unless a hold recording is actually in progress.
+  useEffect(() => {
+    if (!isActive || isModalOverlayActive) voiceStopHold();
+  }, [isActive, isModalOverlayActive, voiceStopHold]);
+
   // Backward-compat bridge: REPL.tsx doesn't yet wire handleKeyDown to
   // <Box onKeyDown>. Subscribe via useInput and adapt InputEvent →
   // KeyboardEvent until the consumer is migrated (separate PR).
