@@ -71,6 +71,21 @@ export async function runBrowserMcpServer(): Promise<void> {
   }
   process.stdin.on('end', shutdownAndExit)
   process.stdin.on('error', shutdownAndExit)
+  // Stdin EOF is the normal shutdown signal when the parent closes the pipe, but
+  // a signal-killed parent (SIGTERM/SIGINT) closes nothing — without these the
+  // spawned Chrome would be orphaned and keep running. Tear it down on the
+  // common termination signals, and as a last resort on our own exit (the latter
+  // can't run async work, so it relies on proc.kill being synchronous).
+  process.on('SIGTERM', shutdownAndExit)
+  process.on('SIGINT', shutdownAndExit)
+  process.on('SIGHUP', shutdownAndExit)
+  process.on('exit', () => {
+    if (exiting) {
+      return
+    }
+    exiting = true
+    session.shutdown()
+  })
 
   logForDebugging('[browser] starting MCP server')
   await server.connect(transport)

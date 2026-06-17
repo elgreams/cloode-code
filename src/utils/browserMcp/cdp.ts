@@ -24,7 +24,15 @@ export type CdpEvent = {
 type Pending = {
   resolve: (value: Record<string, unknown>) => void
   reject: (err: Error) => void
+  timer: ReturnType<typeof setTimeout>
 }
+
+// Default ceiling for any single CDP command. Chrome normally replies in
+// milliseconds; a command that never resolves (a JS dialog blocking the
+// renderer, a hung page, a `while(true)` Runtime.evaluate) would otherwise hang
+// the pending promise — and the whole MCP tool call — until the socket closes.
+// 30s is generous for legitimate slow commands while still bounding the hang.
+const DEFAULT_SEND_TIMEOUT_MS = 30_000
 
 export class CdpClient {
   private ws: WebSocket | undefined
@@ -59,6 +67,7 @@ export class CdpClient {
     method: string,
     params: Record<string, unknown> = {},
     sessionId?: string,
+    timeoutMs: number = DEFAULT_SEND_TIMEOUT_MS,
   ): Promise<Record<string, unknown>> {
     const ws = this.ws
     if (!ws || this.closed) {
@@ -70,7 +79,16 @@ export class CdpClient {
       msg.sessionId = sessionId
     }
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        // Drop the pending entry so a late reply can't resolve a settled promise
+        // and so the map doesn't leak the timed-out request.
+        if (this.pending.delete(id)) {
+          reject(new Error(`CDP command '${method}' timed out after ${timeoutMs}ms`))
+        }
+      }, timeoutMs)
+      // Don't let a pending CDP timer keep the process alive on its own.
+      ;(timer as { unref?: () => void }).unref?.()
+      this.pending.set(id, { resolve, reject, timer })
       ws.send(JSON.stringify(msg))
     })
   }
@@ -109,6 +127,7 @@ export class CdpClient {
         return
       }
       this.pending.delete(msg.id)
+      clearTimeout(p.timer)
       if (msg.error) {
         p.reject(new Error(msg.error.message ?? 'CDP error'))
       } else {
@@ -135,6 +154,7 @@ export class CdpClient {
   private onClose(): void {
     this.closed = true
     for (const p of this.pending.values()) {
+      clearTimeout(p.timer)
       p.reject(new Error('CDP connection closed'))
     }
     this.pending.clear()

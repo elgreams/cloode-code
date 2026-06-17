@@ -155,6 +155,18 @@ export class BrowserSession {
           url: p.request.url,
         }
         this.reqIndex.set(p.requestId, entry)
+        // reqIndex only exists to let the terminal events below back-fill an
+        // entry's status/failed; it is NOT a display buffer. Without a bound it
+        // grows one entry per request forever (a polling/streaming page leaks
+        // memory for the lifetime of the long-running subprocess). Cap it the
+        // same way as the display buffers — Map preserves insertion order, so
+        // deleting the first key evicts the oldest in-flight request.
+        if (this.reqIndex.size > BUFFER_LIMIT) {
+          const oldest = this.reqIndex.keys().next().value
+          if (oldest !== undefined) {
+            this.reqIndex.delete(oldest)
+          }
+        }
         this.push(this.network, sid, entry)
         break
       }
@@ -175,6 +187,16 @@ export class BrowserSession {
         if (entry) {
           entry.failed = p.errorText
         }
+        // Terminal event — the entry will get no further updates, so drop the
+        // index reference now rather than waiting for FIFO eviction.
+        this.reqIndex.delete(p.requestId)
+        break
+      }
+      case 'Network.loadingFinished': {
+        // Terminal event: status was already recorded by responseReceived; the
+        // index reference is no longer needed.
+        const p = ev.params as { requestId: string }
+        this.reqIndex.delete(p.requestId)
         break
       }
     }
