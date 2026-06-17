@@ -2,7 +2,8 @@
 //
 // Recording uses native audio capture (cpal) on macOS, Linux, and Windows
 // for in-process mic access. Falls back to SoX `rec` or arecord (ALSA)
-// on Linux if the native module is unavailable.
+// on Linux, and to SoX `rec` on Windows, if the native module is
+// unavailable.
 
 import { type ChildProcess, spawn, spawnSync } from 'child_process'
 import { readFile } from 'fs/promises'
@@ -77,13 +78,16 @@ const SILENCE_THRESHOLD = '3%'
 function hasCommand(cmd: string): boolean {
   // Spawn the target directly instead of `which cmd`. On Termux/Android
   // `which` is a shell builtin — the external binary is absent or
-  // kernel-blocked (EPERM) when spawned from Node. Only reached on
-  // non-Windows (win32 returns early from all callers), no PATHEXT issue.
+  // kernel-blocked (EPERM) when spawned from Node.
   // result.error is set iff the spawn itself fails (ENOENT/EACCES); exit
   // code is irrelevant — an unrecognized --version still means cmd exists.
+  // On Windows, Node's spawn does no PATHEXT resolution without a shell, so
+  // `rec` would not resolve to `rec.exe` — use shell:true there so PATH +
+  // PATHEXT lookup matches what the user sees in their terminal.
   const result = spawnSync(cmd, ['--version'], {
     stdio: 'ignore',
     timeout: 3000,
+    shell: process.platform === 'win32',
   })
   return result.error === undefined
 }
@@ -226,12 +230,16 @@ export async function checkVoiceDependencies(): Promise<{
     return { available: true, missing: [], installCommand: null }
   }
 
-  // Windows has no supported fallback — native module is required
+  // On Windows, SoX `rec` is the supported fallback when the native module
+  // can't load. If it's present we're good; otherwise point the user at it.
   if (process.platform === 'win32') {
+    if (hasCommand('rec')) {
+      return { available: true, missing: [], installCommand: null }
+    }
     return {
       available: false,
-      missing: ['Voice mode requires the native audio module (not loaded)'],
-      installCommand: null,
+      missing: ['sox (rec command)'],
+      installCommand: 'choco install sox',
     }
   }
 
@@ -300,12 +308,15 @@ export async function checkRecordingAvailability(): Promise<RecordingAvailabilit
     return { available: true, reason: null }
   }
 
-  // Windows has no supported fallback
+  // On Windows, fall back to SoX `rec` when the native module can't load.
   if (process.platform === 'win32') {
+    if (hasCommand('rec')) {
+      return { available: true, reason: null }
+    }
     return {
       available: false,
       reason:
-        'Voice recording requires the native audio module, which could not be loaded.',
+        'Voice recording requires the native audio module (which could not be loaded) or SoX as a fallback.\n\nInstall SoX with: choco install sox  (or download from https://sourceforge.net/projects/sox/ and add it to PATH)',
     }
   }
 
@@ -355,7 +366,7 @@ export async function checkRecordingAvailability(): Promise<RecordingAvailabilit
   return { available: true, reason: null }
 }
 
-// ─── Recording (native audio on macOS/Linux/Windows, SoX/arecord fallback on Linux) ─────────────
+// ─── Recording (native audio on macOS/Linux/Windows; SoX/arecord fallback on Linux, SoX on Windows) ─────────────
 
 let activeRecorder: ChildProcess | null = null
 let nativeRecordingActive = false
@@ -400,9 +411,15 @@ export async function startRecording(
     // Native recording failed — fall through to platform fallbacks
   }
 
-  // Windows has no supported fallback
+  // On Windows, fall back to SoX `rec` (same raw-PCM path as Linux/macOS).
   if (process.platform === 'win32') {
-    logForDebugging('[voice] Windows native recording unavailable, no fallback')
+    if (hasCommand('rec')) {
+      logForDebugging('[voice] Windows native unavailable, using SoX rec')
+      return startSoxRecording(onData, onEnd, options)
+    }
+    logForDebugging(
+      '[voice] Windows native recording unavailable, SoX rec not found',
+    )
     return false
   }
 
