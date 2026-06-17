@@ -60,10 +60,18 @@ if (-not $gitCmd) {
     # session's PATH. Re-probe PATH, then fall back to the default install dir.
     $gitCmd = Get-Command git -ErrorAction SilentlyContinue
     if (-not $gitCmd) {
-      $gitExe = Join-Path $env:ProgramFiles 'Git\cmd\git.exe'
-      if (Test-Path $gitExe) {
-        $env:Path = "$(Split-Path $gitExe);$env:Path"
-        $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+      # Probe both install scopes: machine-scope lands in ProgramFiles; a
+      # non-admin winget run installs user-scope under LocalAppData\Programs.
+      # Checking only ProgramFiles reports a successful user install as failure.
+      foreach ($gitExe in @(
+          (Join-Path $env:ProgramFiles 'Git\cmd\git.exe'),
+          (Join-Path $env:LOCALAPPDATA 'Programs\Git\cmd\git.exe')
+        )) {
+        if (Test-Path $gitExe) {
+          $env:Path = "$(Split-Path $gitExe);$env:Path"
+          $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+          if ($gitCmd) { break }
+        }
       }
     }
   }
@@ -84,12 +92,21 @@ if (-not $gitCmd) {
         $gitRoot = Join-Path $HOME 'PortableGit'
         Info "Extracting PortableGit to $gitRoot ..."
         # 7-Zip SFX flags: -o<dir> sets the target, -y auto-confirms (silent).
-        & $sfx -o"$gitRoot" -y | Out-Null
+        # Build "-o<dir>" as a SINGLE string argument. Writing -o"$gitRoot"
+        # places the quote mid-token; PowerShell 5.1's native-arg quoting then
+        # splits a path containing spaces (e.g. C:\Users\First Last\PortableGit)
+        # into two arguments, so the SFX extracts to the wrong dir or no-ops. One
+        # pre-built string lets the binder quote the whole "-o<path>" correctly.
+        & $sfx "-o$gitRoot" -y | Out-Null
         $gitBin = Join-Path $gitRoot 'bin'
         if (Test-Path (Join-Path $gitBin 'git.exe')) {
           $env:Path = "$gitBin;$env:Path"
           $userPathGit = [Environment]::GetEnvironmentVariable('Path', 'User')
-          if ($userPathGit -notlike "*$gitBin*") {
+          # Compare PATH segments exactly. `-notlike "*$gitBin*"` treats $gitBin
+          # as a wildcard pattern: bracket chars in the profile path break the
+          # match (duplicate entries on re-run) and substring matching collides
+          # with longer entries. Split on ';' and test for an exact member.
+          if (($userPathGit -split ';') -notcontains $gitBin) {
             [Environment]::SetEnvironmentVariable('Path', "$gitBin;$userPathGit", 'User')
           }
           $gitCmd = Get-Command git -ErrorAction SilentlyContinue
@@ -173,6 +190,16 @@ if (Test-Path $InstallDir) {
 } else {
   Info "Cloning repository..."
   & $Git clone --depth 1 $Repo $InstallDir
+  # `git clone` is a native command; with PSNativeCommandUseErrorActionPreference
+  # disabled above, a non-zero exit won't abort on its own. Check it explicitly,
+  # else we'd plough on (bun install / build) against a partial or empty dir and
+  # surface a confusing "Build did not produce cli-dev.exe" instead of the real
+  # cause. Remove the freshly-created dir so a re-run can clone cleanly rather
+  # than taking the pull path on a broken checkout.
+  if ($LASTEXITCODE -ne 0) {
+    Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue
+    Fail "git clone failed (exit $LASTEXITCODE). Check your network/proxy and re-run."
+  }
 }
 Ok "Source: $InstallDir"
 
@@ -180,7 +207,14 @@ Info "Installing dependencies..."
 Push-Location $InstallDir
 try {
   bun install --frozen-lockfile 2>$null
-  if ($LASTEXITCODE -ne 0) { bun install }
+  if ($LASTEXITCODE -ne 0) {
+    # Frozen-lockfile failed (lockfile drift) — retry without it, this time
+    # surfacing diagnostics. Native exit codes don't abort (Stop coupling is
+    # disabled above), so check explicitly rather than letting a failed install
+    # proceed to the build and masquerade as "Build did not produce cli-dev.exe".
+    bun install
+    if ($LASTEXITCODE -ne 0) { Fail "bun install failed (exit $LASTEXITCODE)." }
+  }
 } finally { Pop-Location }
 Ok "Dependencies installed"
 
@@ -206,7 +240,10 @@ Set-Content -Path $Shim -Value $ShimContent -Encoding Ascii
 Ok "Shim: $Shim"
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($userPath -notlike "*$BinDir*") {
+# Exact-segment compare, not `-notlike "*$BinDir*"` (see PortableGit PATH note):
+# wildcard matching on the interpolated path duplicates the entry on re-run when
+# the profile path has bracket chars, or skips a needed edit on a prefix clash.
+if (($userPath -split ';') -notcontains $BinDir) {
   [Environment]::SetEnvironmentVariable('Path', "$BinDir;$userPath", 'User')
   $env:Path = "$BinDir;$env:Path"
   Warn "Added $BinDir to your user PATH - restart your terminal for it to take effect."
