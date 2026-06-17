@@ -2243,6 +2243,15 @@ export function normalizeMessagesForAPI(
             }
             return [block]
           })
+          // The flatMap above can drop every block (e.g. an assistant message
+          // whose only content was an empty thinking block), leaving `content:
+          // []`. Most chat APIs reject an assistant message with empty content
+          // ("all messages must have non-empty content"), which would crash the
+          // very turn this feeds. The message carried nothing usable, so skip it
+          // entirely rather than emit an empty-content message.
+          if (content.length === 0) {
+            return
+          }
           const normalizedMessage: AssistantMessage = {
             ...message,
             message: {

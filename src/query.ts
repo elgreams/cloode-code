@@ -1415,13 +1415,38 @@ ${internalContinuationInstruction}`,
       const lastTextBlock = assistantTextBlocks.at(-1)
       const lastText =
         lastTextBlock?.type === 'text' ? lastTextBlock.text.trim() : ''
-      const endsWithQuestion = lastText.endsWith('?')
+      // For the decision/question guards, fall back to the trailing thinking
+      // block when the turn has no visible text. A weak model can hand a decision
+      // back to the user as reasoning only ("…I should ask before proceeding"),
+      // which surfaces as a thinking block with no text. Without this the empty
+      // branch has no guard and auto-continues straight past that hand-back.
+      const lastThinkingBlock =
+        lastAssistant?.type === 'assistant' && !lastAssistant.isApiErrorMessage
+          ? lastAssistant.message.content
+              .filter(
+                b =>
+                  b.type === 'thinking' &&
+                  typeof (b as { thinking?: unknown }).thinking === 'string' &&
+                  (b as { thinking: string }).thinking.trim().length > 0,
+              )
+              .at(-1)
+          : undefined
+      const decisionText = hadText
+        ? lastText
+        : lastThinkingBlock?.type === 'thinking'
+          ? lastThinkingBlock.thinking.trim()
+          : ''
+      // A question anywhere in the closing text (not just a literal trailing `?`)
+      // signals a decision point handed back to the user — e.g. "…should I
+      // proceed? Let me know." has prose after the `?` and would slip past an
+      // ends-with check. Suppressing the nudge is the safe direction.
+      const endsWithQuestion = decisionText.includes('?')
       // Don't auto-continue when the model is clearly handing a decision back to
       // the user but doesn't end the final sentence with a literal question mark
       // (e.g. "Let me know which approach you prefer and I'll get started.").
       const isAwaitingUserDecision =
         /\b(let me know|tell me|which (approach|option|one)|what (approach|option)|would you like|do you want|should i|shall i|if you want|if you'd like)\b/i.test(
-          lastText,
+          decisionText,
         )
       // Text nudges are risky because the user already saw prose. Only recover
       // when the prose strongly looks like a missing immediate tool action.
@@ -1445,7 +1470,12 @@ ${internalContinuationInstruction}`,
         promisedImmediateToolAction &&
         !endsWithQuestion &&
         !isAwaitingUserDecision
-      const shouldNudgeEmpty = !hadText
+      // Mirror the text-path guards: a thinking-only/empty turn whose reasoning
+      // is a question or a hand-back to the user must NOT be auto-continued —
+      // that's the same "auto-answering a decision point" failure, just expressed
+      // as a thinking block instead of visible prose.
+      const shouldNudgeEmpty =
+        !hadText && !endsWithQuestion && !isAwaitingUserDecision
       if (
         autoContinueEnabled &&
         (shouldNudgeText || shouldNudgeEmpty) &&
