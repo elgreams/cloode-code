@@ -12,7 +12,7 @@
 
 import { mkdir, rename, rm, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { isAbsolute, join, relative, sep } from 'path'
 import { logForDebugging } from '../utils/debug.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { toError } from '../utils/errors.js'
@@ -79,12 +79,30 @@ async function extractSox(archivePath: string, binDir: string): Promise<void> {
   const { readFile } = await import('fs/promises')
   const entries = await unzipFile(await readFile(archivePath))
   for (const [name, data] of Object.entries(entries)) {
-    const base = name.split('/').pop() ?? name
+    // Reduce to a bare filename, splitting on BOTH separators. The zip is
+    // produced on Windows and we run on Windows, so an entry name can use '\';
+    // splitting only on '/' would leave a traversal sequence like
+    // '..\\..\\evil.dll' intact, and join(binDir, that) escapes binDir
+    // (zip-slip → DLL hijack next to sox.exe). Take the last path component and
+    // reject anything that still looks like a path or a traversal token.
+    const base = name.split(/[/\\]/).pop() ?? name
+    if (!base || base === '.' || base === '..') continue
     const lower = base.toLowerCase()
     const isWanted = lower === 'sox.exe' || lower.endsWith('.dll')
     if (!isWanted) continue
-    await writeFile(join(binDir, base), Buffer.from(data))
+    const dest = join(binDir, base)
+    // Defence in depth: never write outside binDir even if base were crafted.
+    if (!isInside(binDir, dest)) continue
+    await writeFile(dest, Buffer.from(data))
   }
+}
+
+// True if `target` resolves to a path inside `dir` (or is `dir` itself).
+function isInside(dir: string, target: string): boolean {
+  const rel = relative(dir, target)
+  return (
+    rel === '' || (!rel.startsWith('..') && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+  )
 }
 
 // ─── Public provisioning entry point ──────────────────────────────────────
