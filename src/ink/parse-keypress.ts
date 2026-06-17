@@ -756,6 +756,12 @@ function parseKeypress(s: string = ''): ParsedKey {
     key.name = s.toLowerCase()
     key.shift = true
   } else if ((parts = META_KEY_CODE_RE.exec(s))) {
+    // Alt/Meta + single alphanumeric arrives ESC-prefixed (e.g. \x1bz) on
+    // terminals without the Kitty keyboard protocol. Set the name (the CSI u
+    // path already does) so keybinding matchers see the bare key — without it
+    // KeyboardEvent.key is the raw "\x1bz" and modifier-combo bindings (e.g.
+    // alt+z push-to-talk) never match on legacy terminals.
+    key.name = parts[1]!.toLowerCase()
     key.meta = true
     key.shift = /^[A-Z]$/.test(parts[1]!)
   } else if ((parts = FN_KEY_RE.exec(s))) {
