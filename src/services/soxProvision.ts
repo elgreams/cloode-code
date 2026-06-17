@@ -31,6 +31,11 @@ const SOX_WIN_URL = `https://sourceforge.net/projects/sox/files/sox/${SOX_VERSIO
 // bytes against this pinned digest before extracting/executing sox.exe — a
 // compromised mirror or redirect MITM could otherwise serve a hostile binary
 // that we'd write into the config dir and run during voice capture.
+//
+// Only changes if SOX_VERSION is bumped (SoX 14.4.2 is from 2015 and the project
+// is dormant, so realistically never). To regenerate after a version bump:
+//   curl -sL -o sox.zip "$SOX_WIN_URL" && sha256sum sox.zip
+// then paste the hex digest below.
 const SOX_WIN_SHA256 =
   '8072cc147cf1a3b3713b8b97d6844bb9389e211ab9e1101e432193fad6ae6662'
 

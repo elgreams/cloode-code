@@ -144,9 +144,18 @@ if (-not $BashExe) {
   if ($bashCmd) { $BashExe = $bashCmd.Source }
 }
 if ($BashExe) {
+  # Wire bash up for this session unconditionally (so the build/run below work),
+  # but only PERSIST our value if the user hasn't already set a valid one of
+  # their own — re-running the installer shouldn't clobber a bash.exe they
+  # deliberately pointed at. If their persisted value is missing or stale, fix it.
   $env:CLAUDE_CODE_GIT_BASH_PATH = $BashExe
-  [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $BashExe, 'User')
-  Ok "bash: $BashExe"
+  $persistedBash = [Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', 'User')
+  if (-not $persistedBash -or -not (Test-Path $persistedBash)) {
+    [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $BashExe, 'User')
+    Ok "bash: $BashExe"
+  } else {
+    Ok "bash: $persistedBash (keeping your configured value)"
+  }
 } else {
   Warn "Could not locate bash.exe next to git. If the CLI reports git-bash missing, set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe."
 }
