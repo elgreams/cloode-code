@@ -461,9 +461,22 @@ function startSoxRecording(
   onData: (chunk: Buffer) => void,
   onEnd: () => void,
   options?: { silenceDetection?: boolean },
-): boolean {
+): Promise<boolean> {
   const useSilenceDetection = options?.silenceDetection !== false
   const { cmd, inputArgs } = resolveSoxRecorder()
+
+  // Kill any recorder still running before spawning a new one. The native
+  // branch already does this; without it here, overlapping sessions orphan the
+  // previous child — the mic stays held and its PCM is delivered to a stale
+  // callback that's never killed.
+  if (activeRecorder) {
+    try {
+      activeRecorder.kill('SIGTERM')
+    } catch {
+      // best-effort
+    }
+    activeRecorder = null
+  }
 
   // Record raw PCM: 16 kHz, 16-bit signed, mono, to stdout.
   // --buffer 1024 forces SoX to flush audio in small chunks instead of
@@ -516,24 +529,43 @@ function startSoxRecording(
   // Consume stderr to prevent backpressure
   child.stderr?.on('data', () => {})
 
-  child.on('close', () => {
-    activeRecorder = null
-    onEnd()
+  // Resolve only once we know the spawn outcome: 'spawn' fires when the child
+  // process actually launched, 'error' when it couldn't (binary missing, device
+  // busy). Returning true synchronously before this would report "mic OK" even
+  // when the recorder never started, so the first hold-to-talk yields silence.
+  return new Promise<boolean>(resolve => {
+    let settled = false
+    child.on('spawn', () => {
+      if (!settled) {
+        settled = true
+        resolve(true)
+      }
+    })
+    child.on('close', () => {
+      if (activeRecorder === child) {
+        activeRecorder = null
+      }
+      onEnd()
+    })
+    child.on('error', err => {
+      logError(err)
+      if (activeRecorder === child) {
+        activeRecorder = null
+      }
+      if (!settled) {
+        settled = true
+        resolve(false)
+      } else {
+        onEnd()
+      }
+    })
   })
-
-  child.on('error', err => {
-    logError(err)
-    activeRecorder = null
-    onEnd()
-  })
-
-  return true
 }
 
 function startArecordRecording(
   onData: (chunk: Buffer) => void,
   onEnd: () => void,
-): boolean {
+): Promise<boolean> {
   // Record raw PCM: 16 kHz, 16-bit signed little-endian, mono, to stdout.
   // arecord does not support built-in silence detection, so this backend
   // is best suited for push-to-talk (silenceDetection: false).
@@ -550,6 +582,17 @@ function startArecordRecording(
     '-', // write to stdout
   ]
 
+  // Kill any recorder still running before spawning a new one (see the SoX
+  // branch) so overlapping sessions can't orphan the previous child.
+  if (activeRecorder) {
+    try {
+      activeRecorder.kill('SIGTERM')
+    } catch {
+      // best-effort
+    }
+    activeRecorder = null
+  }
+
   const child = spawn('arecord', args, {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -563,18 +606,35 @@ function startArecordRecording(
   // Consume stderr to prevent backpressure
   child.stderr?.on('data', () => {})
 
-  child.on('close', () => {
-    activeRecorder = null
-    onEnd()
+  // Resolve on the actual spawn outcome (see startSoxRecording) so availability
+  // reflects whether arecord truly launched, not just that spawn() was called.
+  return new Promise<boolean>(resolve => {
+    let settled = false
+    child.on('spawn', () => {
+      if (!settled) {
+        settled = true
+        resolve(true)
+      }
+    })
+    child.on('close', () => {
+      if (activeRecorder === child) {
+        activeRecorder = null
+      }
+      onEnd()
+    })
+    child.on('error', err => {
+      logError(err)
+      if (activeRecorder === child) {
+        activeRecorder = null
+      }
+      if (!settled) {
+        settled = true
+        resolve(false)
+      } else {
+        onEnd()
+      }
+    })
   })
-
-  child.on('error', err => {
-    logError(err)
-    activeRecorder = null
-    onEnd()
-  })
-
-  return true
 }
 
 export function stopRecording(): void {
