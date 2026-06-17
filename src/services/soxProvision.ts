@@ -12,6 +12,7 @@
 
 import { mkdir, rename, rm, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
+import { createHash } from 'crypto'
 import { isAbsolute, join, relative, sep } from 'path'
 import { logForDebugging } from '../utils/debug.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
@@ -25,6 +26,13 @@ import { createAxiosInstance } from '../utils/proxy.js'
 // the /download suffix 302-redirects to a mirror (axios follows redirects).
 const SOX_VERSION = '14.4.2'
 const SOX_WIN_URL = `https://sourceforge.net/projects/sox/files/sox/${SOX_VERSION}/sox-${SOX_VERSION}-win32.zip/download`
+// SHA-256 of sox-14.4.2-win32.zip from the canonical SourceForge release. The
+// /download URL 302-redirects to an arbitrary third-party mirror, so verify the
+// bytes against this pinned digest before extracting/executing sox.exe — a
+// compromised mirror or redirect MITM could otherwise serve a hostile binary
+// that we'd write into the config dir and run during voice capture.
+const SOX_WIN_SHA256 =
+  '8072cc147cf1a3b3713b8b97d6844bb9389e211ab9e1101e432193fad6ae6662'
 
 function soxDir(): string {
   return join(getClaudeConfigHomeDir(), 'sox')
@@ -69,6 +77,12 @@ async function downloadToFile(
     },
   })
   await writeFile(dest, Buffer.from(res.data))
+}
+
+// Hex SHA-256 of a file on disk, for verifying a download against a pinned digest.
+async function sha256OfFile(path: string): Promise<string> {
+  const { readFile } = await import('fs/promises')
+  return createHash('sha256').update(await readFile(path)).digest('hex')
 }
 
 // Extract sox.exe and every sibling .dll from the win32 zip into binDir,
@@ -163,6 +177,15 @@ async function doProvision(
     const archivePath = join(binDir, `sox-${SOX_VERSION}-win32.zip`)
     logForDebugging('[sox] downloading recorder')
     await downloadToFile(SOX_WIN_URL, archivePath, onProgress)
+    // Verify the downloaded bytes against the pinned digest BEFORE extracting or
+    // executing anything — a hostile mirror is exactly what this guards against.
+    const digest = await sha256OfFile(archivePath)
+    if (digest !== SOX_WIN_SHA256) {
+      await rm(archivePath, { force: true })
+      throw new Error(
+        `SoX download failed integrity check (expected ${SOX_WIN_SHA256}, got ${digest}).`,
+      )
+    }
     await extractSox(archivePath, binDir)
     await rm(archivePath, { force: true })
 
