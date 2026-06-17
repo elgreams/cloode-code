@@ -44,7 +44,14 @@ export class BrowserSession {
       return
     }
     if (!this.starting) {
-      this.starting = this.start()
+      // Clear the cached promise on failure so a later tool call can retry. Left
+      // set, a transient launch failure (stale lock, slow disk → port timeout)
+      // would settle `starting` rejected and poison every later call with the
+      // same stale error for the life of the subprocess.
+      this.starting = this.start().catch(err => {
+        this.starting = undefined
+        throw err
+      })
     }
     await this.starting
   }
@@ -85,6 +92,10 @@ export class BrowserSession {
     this.console.set(sessionId, [])
     this.network.set(sessionId, [])
     await cdp.send('Page.enable', {}, sessionId)
+    // Lifecycle events carry a loaderId, which is the only signal that lets
+    // navigate() tell its own page-load apart from a prior in-flight one on the
+    // same frame (loadEventFired carries no loader/frame id).
+    await cdp.send('Page.setLifecycleEventsEnabled', { enabled: true }, sessionId)
     await cdp.send('Runtime.enable', {}, sessionId)
     await cdp.send('Network.enable', {}, sessionId)
     await cdp.send('Log.enable', {}, sessionId)
@@ -149,6 +160,17 @@ export class BrowserSession {
         const p = ev.params as {
           requestId: string
           request: { url: string; method: string }
+          redirectResponse?: { status: number }
+        }
+        // A redirect re-fires requestWillBeSent with the SAME requestId, carrying
+        // the prior hop's response. Finalize that hop's status on its existing
+        // entry instead of letting the new entry overwrite it in reqIndex (which
+        // would lose the redirect's status and leave it looking pending).
+        if (p.redirectResponse) {
+          const prior = this.reqIndex.get(p.requestId)
+          if (prior) {
+            prior.status = p.redirectResponse.status
+          }
         }
         const entry: NetworkEntry = {
           method: p.request.method,
@@ -241,26 +263,45 @@ export class BrowserSession {
       throw new Error('browser not started')
     }
     const sid = this.session
+    // Buffer lifecycle 'load' events from the moment we listen — the load can
+    // fire before Page.navigate's reply arrives — and only resolve on the one
+    // whose loaderId matches THIS navigation, so a prior in-flight load on the
+    // same frame can't resolve us early against the old document.
+    let loaderId: string | undefined
+    let resolveLoaded: (() => void) | undefined
+    const seenLoaders = new Set<string>()
+    const off = cdp.onEvent(ev => {
+      if (ev.sessionId !== sid) return
+      if (ev.method !== 'Page.lifecycleEvent') return
+      const p = ev.params as { name?: string; loaderId?: string }
+      if (p.name !== 'load' || !p.loaderId) return
+      seenLoaders.add(p.loaderId)
+      if (loaderId && p.loaderId === loaderId) {
+        resolveLoaded?.()
+      }
+    })
     const loaded = new Promise<void>(resolve => {
-      const off = cdp.onEvent(ev => {
-        if (ev.sessionId === sid && ev.method === 'Page.loadEventFired') {
-          off()
-          resolve()
-        }
-      })
+      resolveLoaded = resolve
       // Don't hang forever on pages that never fire load (streaming, etc.).
-      setTimeout(() => {
-        off()
-        resolve()
-      }, 30_000)
+      setTimeout(resolve, 30_000)
     })
     const res = (await cdp.send('Page.navigate', { url }, sid)) as {
       errorText?: string
+      loaderId?: string
     }
     if (res.errorText) {
+      off()
       throw new Error(`navigation failed: ${res.errorText}`)
     }
+    loaderId = res.loaderId
+    // The matching load may have already arrived while Page.navigate was
+    // in-flight; resolve immediately if so. (No loaderId in the reply — e.g. a
+    // same-document navigation — means no load to wait for.)
+    if (!loaderId || seenLoaders.has(loaderId)) {
+      resolveLoaded?.()
+    }
     await loaded
+    off()
     // Brief settle for client-rendered content after the load event.
     await new Promise(r => setTimeout(r, 400))
   }
@@ -453,12 +494,21 @@ export class BrowserSession {
     return res.data
   }
 
+  // Session id of the active tab, or undefined if there is none. Unlike the
+  // `session` getter this never throws — read-only queries should degrade to an
+  // empty result rather than error when the last tab has been closed.
+  private get sessionOrNone(): string | undefined {
+    return this.tabs.find(t => t.targetId === this.activeTargetId)?.sessionId
+  }
+
   getConsole(): ConsoleEntry[] {
-    return this.console.get(this.session) ?? []
+    const sid = this.sessionOrNone
+    return sid ? this.console.get(sid) ?? [] : []
   }
 
   getNetwork(): NetworkEntry[] {
-    return this.network.get(this.session) ?? []
+    const sid = this.sessionOrNone
+    return sid ? this.network.get(sid) ?? [] : []
   }
 
   async wait(seconds: number): Promise<void> {

@@ -117,6 +117,75 @@ function chromePidFile(profileDir: string): string {
  * surfaces as "Chrome did not expose a DevTools port in time". A crashed session
  * (our shutdown() never ran) is exactly when this orphan is left behind.
  */
+/**
+ * Split a shell-style argument string into tokens, honoring single and double
+ * quotes (which group spaces and are stripped from the result). Used for
+ * CLAUDE_BROWSER_EXTRA_ARGS so a quoted value containing spaces stays one arg.
+ * Goes to `spawn` with no shell, so quotes here are purely for grouping — there
+ * is no shell-injection surface to widen.
+ */
+function tokenizeArgs(input: string | undefined): string[] {
+  if (!input) return []
+  const tokens: string[] = []
+  let cur = ''
+  let quote: '"' | "'" | undefined
+  let has = false
+  for (const ch of input) {
+    if (quote) {
+      if (ch === quote) quote = undefined
+      else cur += ch
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+      has = true
+    } else if (ch === ' ' || ch === '\t') {
+      if (has) tokens.push(cur)
+      cur = ''
+      has = false
+    } else {
+      cur += ch
+      has = true
+    }
+  }
+  if (has) tokens.push(cur)
+  return tokens
+}
+
+/**
+ * True only if `pid` is a live process whose command line is a Chrome launched
+ * against `profileDir` (i.e. it carries our `--user-data-dir`). Guards the
+ * orphan reaper against killing an unrelated process that reused a recycled PID.
+ * On any uncertainty (command unavailable, read failed) returns false — we'd
+ * rather leak an orphan than kill the wrong process.
+ */
+function pidIsOurChrome(pid: number, profileDir: string): boolean {
+  try {
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process')
+    let cmdline = ''
+    if (process.platform === 'win32') {
+      // CIM gives the full command line; query by PID and read CommandLine.
+      cmdline = execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+        ],
+        { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] },
+      )
+    } else {
+      // `ps -o command=` prints the argv of the pid with no header.
+      cmdline = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+    }
+    return cmdline.includes(profileDir)
+  } catch {
+    return false
+  }
+}
+
 function reapOrphanChrome(profileDir: string): void {
   const pidFile = chromePidFile(profileDir)
   if (existsSync(pidFile)) {
@@ -125,8 +194,18 @@ function reapOrphanChrome(profileDir: string): void {
       try {
         // Signal 0 just tests for existence; if it throws, the process is gone.
         process.kill(pid, 0)
-        process.kill(pid)
-        logForDebugging(`[browser] reaped orphan chrome pid ${pid}`)
+        // The recorded PID may have been recycled by the OS to an unrelated
+        // process after our orphaned Chrome died. Only kill if the live process
+        // is positively a Chrome bound to THIS profile; otherwise skip (the
+        // SingletonLock cleanup below still recovers the handoff case).
+        if (pidIsOurChrome(pid, profileDir)) {
+          process.kill(pid)
+          logForDebugging(`[browser] reaped orphan chrome pid ${pid}`)
+        } else {
+          logForDebugging(
+            `[browser] pid ${pid} is alive but not our chrome — not killing`,
+          )
+        }
       } catch {
         // Not running (or not ours to kill) — nothing to reap.
       }
@@ -196,10 +275,10 @@ export async function launchChrome(): Promise<LaunchedChrome> {
     '--no-default-browser-check',
     '--disable-features=Translate,AcceptCHFrame',
     '--homepage=about:blank',
-    // Extra space-separated args (e.g. --no-sandbox in containers/CI).
-    ...(process.env.CLAUDE_BROWSER_EXTRA_ARGS
-      ? process.env.CLAUDE_BROWSER_EXTRA_ARGS.split(' ').filter(Boolean)
-      : []),
+    // Extra args (e.g. --no-sandbox in containers/CI). Tokenized quote-aware so
+    // a flag whose value contains spaces survives (e.g.
+    // --host-resolver-rules="MAP * 1.2.3.4"); a naive split(' ') would shatter it.
+    ...tokenizeArgs(process.env.CLAUDE_BROWSER_EXTRA_ARGS),
     'about:blank',
   ]
   logForDebugging(`[browser] launching ${exe}`)
