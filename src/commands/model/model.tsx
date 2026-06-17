@@ -1,9 +1,14 @@
 import { c as _c } from "react/compiler-runtime";
+import { homedir } from 'os';
+import { isAbsolute, join } from 'path';
 import chalk from 'chalk';
 import * as React from 'react';
 import type { CommandResultDisplay } from '../../commands.js';
 import { ModelPicker } from '../../components/ModelPicker.js';
 import { COMMON_HELP_ARGS, COMMON_INFO_ARGS } from '../../constants/xml.js';
+import { getCwd } from '../../utils/cwd.js';
+import { getModelOptions } from '../../utils/model/modelOptions.js';
+import { writeFileSync_DEPRECATED } from '../../utils/slowOperations.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandCall } from '../../types/command.js';
@@ -277,9 +282,14 @@ export const call: LocalJSXCommandCall = async (onDone, _context, args) => {
     return <ShowModelAndClose onDone={onDone} />;
   }
   if (COMMON_HELP_ARGS.includes(args)) {
-    onDone('Run /model to open the model selection menu, or /model [modelName] to set the model.', {
+    onDone('Run /model to open the model selection menu, /model [modelName] to set the model, or /model export [path] to write all available models to a text file.', {
       display: 'system'
     });
+    return;
+  }
+  if (args === 'export' || args.startsWith('export ')) {
+    logEvent('tengu_model_command_export', {});
+    exportModels(onDone, args.slice('export'.length).trim());
     return;
   }
   if (args) {
@@ -290,6 +300,40 @@ export const call: LocalJSXCommandCall = async (onDone, _context, args) => {
   }
   return <ModelPickerWrapper onDone={onDone} />;
 };
+function exportModels(onDone: (result?: string, options?: {
+  display?: CommandResultDisplay;
+}) => void, pathArg: string): void {
+  const options = getModelOptions();
+  const lines = options.map(opt => {
+    const value = opt.value ?? 'default';
+    const desc = opt.description ? ` — ${opt.description}` : '';
+    return `${opt.label} [${value}]${desc}`;
+  });
+  const content = `Available models (${options.length})\n\n${lines.join('\n')}\n`;
+  let target = pathArg || 'models.txt';
+  if (target === '~') {
+    target = homedir();
+  } else if (target.startsWith('~/')) {
+    target = join(homedir(), target.slice(2));
+  }
+  if (!target.endsWith('.txt')) {
+    target = target.replace(/\.[^./\\]+$/, '') + '.txt';
+  }
+  const filepath = isAbsolute(target) ? target : join(getCwd(), target);
+  try {
+    writeFileSync_DEPRECATED(filepath, content, {
+      encoding: 'utf-8',
+      flush: true
+    });
+    onDone(`Exported ${options.length} models to: ${filepath}`, {
+      display: 'system'
+    });
+  } catch (error) {
+    onDone(`Failed to export models: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+      display: 'system'
+    });
+  }
+}
 function renderModelLabel(model: string | null): string {
   const rendered = renderDefaultModelSetting(model ?? getDefaultMainLoopModelSetting());
   return model === null ? `${rendered} (default)` : rendered;
