@@ -320,6 +320,16 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       saveGlobalConfig(c => ({ ...c, companionModel: undefined }))
       return say(`Buddy model reset to **default small-fast (${getSmallFastModel()})**.`)
     }
+    // Validate against the known model ids (the interactive picker does; the
+    // text path didn't). An unknown id would persist, then every observer turn
+    // throws inside queryHaiku — swallowed by the observer's try/catch — so the
+    // companion goes silently mute with no feedback. Reject up front instead.
+    const known = getModelOptions(false).some(option => option.value === model)
+    if (!known) {
+      return say(
+        `Unknown model **${model}**. Run \`/buddy model\` to pick from available models.`,
+      )
+    }
     saveGlobalConfig(c => ({ ...c, companionModel: model }))
     return say(`Buddy model set to **${model}**. Main chat model unchanged.`)
   }

@@ -192,6 +192,10 @@ function AccountUsageStatus(): React.ReactNode {
 
 function formatUsageWindow(label: string, window: ReturnType<typeof getRawUtilization>['five_hour']): string | null {
   if (!window) return null;
+  // A non-numeric ratelimit header (possible via custom OpenAI-compat / Codex
+  // gateways) parses to NaN, which survives every Math.min/max clamp and would
+  // render literal "NaN%". Treat non-finite utilization as "no data".
+  if (!Number.isFinite(window.utilization)) return null;
   const percent = Math.min(100, Math.max(0, window.utilization * 100));
   const reset = formatResetTime(window.resets_at, false);
   return `${label} ${percent.toFixed(0)}%${reset ? ` resets ${reset}` : ''}`;

@@ -40,6 +40,11 @@ const PET_HEARTS = [`   ${H}    ${H}   `, `  ${H}  ${H}   ${H}  `, ` ${H}   ${H}
 // given frame is built once and reused. glimmerIndex is shared across all sprite
 // lines (driven by the widest line), so the highlight sweeps the rows in sync.
 const shimmerFrameCache = new Map<string, React.ReactNode>();
+// Key carries no companion identity, so changing creature (reroll/select/load)
+// interns a fresh population of `text` values the cache would otherwise never
+// free. Cap it FIFO so a long-lived session that rerolls repeatedly can't grow
+// RSS without bound; a single companion's frame count stays well under this.
+const SHIMMER_CACHE_LIMIT = 4096;
 function ShinyText(t0) {
   const {
     text,
@@ -54,6 +59,10 @@ function ShinyText(t0) {
       const shouldUseShimmer = index === glimmerIndex || Math.abs(index - glimmerIndex) === 1;
       return <Text key={i} color={shouldUseShimmer ? getRainbowColor(index, true) : getRainbowColor(index)}>{char}</Text>;
     })}</Text>;
+  if (shimmerFrameCache.size >= SHIMMER_CACHE_LIMIT) {
+    const oldest = shimmerFrameCache.keys().next().value;
+    if (oldest !== undefined) shimmerFrameCache.delete(oldest);
+  }
   shimmerFrameCache.set(key, node);
   return node;
 }
@@ -249,7 +258,11 @@ export function CompanionSprite(): React.ReactNode {
   // interacting (speaking/focused/petting); idle uses a slower, cheaper rate.
   // If the terminal reports blur, pause shimmer until focus returns. If the
   // prompt has been inactive for a while, pause idle shimmer until input resumes.
-  const companion = getCompanion();
+  // Guard the roll behind the feature flag: getCompanion() reads config and, for
+  // the non-pinned case, runs a PRNG + string hash. The early `return null` for
+  // a disabled BUDDY is below the hooks (so it can't short-circuit them), so do
+  // it here to skip the per-render work when the companion will never render.
+  const companion = feature('BUDDY') ? getCompanion() : null;
   const isPetting = petAt !== undefined && (tick - petStartTick) * TICK_MS < PET_BURST_MS;
   const interacting = reaction !== undefined || focused || isPetting;
   const shouldIdleShimmer = inputRecentlyActive || interacting;
