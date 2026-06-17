@@ -234,10 +234,11 @@ export default class App extends PureComponent<Props, State> {
         // Enable terminal focus reporting (DECSET 1004)
         this.props.stdout.write(EFE);
         // Enable extended key reporting so ctrl+shift+<letter> is
-        // distinguishable from ctrl+<letter>. We write both the kitty stack
-        // push (CSI >1u) and xterm modifyOtherKeys level 2 (CSI >4;2m) —
-        // terminals honor whichever they implement (tmux only accepts the
-        // latter).
+        // distinguishable from ctrl+<letter>, and so modifier combos report
+        // press/release event types (powers voice hold-to-talk). We write
+        // both the kitty stack push (CSI >3u = disambiguate | report-event-
+        // types) and xterm modifyOtherKeys level 2 (CSI >4;2m) — terminals
+        // honor whichever they implement (tmux only accepts the latter).
         if (supportsExtendedKeys()) {
           this.props.stdout.write(ENABLE_KITTY_KEYBOARD);
           this.props.stdout.write(ENABLE_MODIFY_OTHER_KEYS);
@@ -441,7 +442,8 @@ export default class App extends PureComponent<Props, State> {
 
 // Helper to process all keys within a single discrete update context.
 // discreteUpdates expects (fn, a, b, c, d) -> fn(a, b, c, d)
-function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined, _unused2: undefined): void {
+// Exported for testing (release-event diversion).
+export function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined, _unused2: undefined): void {
   // Update interaction time for notification timeout tracking.
   // This is called from the central input handler to avoid having multiple
   // stdin listeners that can cause race conditions and dropped input.
@@ -494,6 +496,16 @@ function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined,
     // Failsafe: if we receive input, the terminal must be focused
     if (!getTerminalFocused()) {
       setTerminalFocused(true);
+    }
+
+    // Kitty key-release events (event_type=3) aren't keystrokes — routing
+    // them through the normal input sinks would double-fire every handler
+    // (typing 'x' would insert two x's). Divert to a side-channel that only
+    // release-aware consumers (voice push-to-talk) listen on. 'press',
+    // 'repeat', and undefined fall through and behave as before.
+    if (item.eventType === 'release') {
+      app.internal_eventEmitter.emit('keyrelease', item);
+      continue;
     }
 
     // Handle Ctrl+Z (suspend) using parsed key to support both raw (\x1a) and

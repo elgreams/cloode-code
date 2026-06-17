@@ -125,6 +125,7 @@ type UseVoiceOptions = {
 type UseVoiceReturn = {
   state: VoiceState
   handleKeyEvent: (fallbackMs?: number) => void
+  stopHold: () => void
 }
 
 // Gap (ms) between auto-repeat key events that signals key release.
@@ -671,6 +672,31 @@ export function useVoice({
     [enabled, focusMode, cleanup],
   )
 
+  // ── Authoritative hold release ──────────────────────────────────────
+  // Called when a real key-release event arrives (Kitty keyboard protocol,
+  // via useKeyRelease). Unlike the repeat-timing heuristic in handleKeyEvent
+  // — which infers release from a gap between auto-repeats and is flaky
+  // across terminals — this is a definitive "the user let go" signal. Finish
+  // the recording immediately and clear the fallback timers so they can't
+  // also fire. No-op unless we're mid key-hold recording (focus-mode
+  // sessions end on blur, not key release; processing/idle have nothing to
+  // stop).
+  const stopHold = useCallback((): void => {
+    if (focusTriggeredRef.current) return
+    if (releaseTimerRef.current) {
+      clearTimeout(releaseTimerRef.current)
+      releaseTimerRef.current = null
+    }
+    if (repeatFallbackTimerRef.current) {
+      clearTimeout(repeatFallbackTimerRef.current)
+      repeatFallbackTimerRef.current = null
+    }
+    if (stateRef.current === 'recording') {
+      logForDebugging('[voice] Key release — finishing hold recording')
+      finishRecording()
+    }
+  }, [])
+
   // Cleanup only when disabled or unmounted - NOT on state changes
   useEffect(() => {
     if (!enabled && stateRef.current !== 'idle') {
@@ -685,5 +711,6 @@ export function useVoice({
   return {
     state,
     handleKeyEvent,
+    stopHold,
   }
 }

@@ -16,11 +16,16 @@ const FN_KEY_RE =
   // eslint-disable-next-line no-control-regex
   /^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/
 
-// CSI u (kitty keyboard protocol): ESC [ codepoint [; modifier] u
+// CSI u (kitty keyboard protocol): ESC [ codepoint [; modifier[:event_type]] u
 // Example: ESC[13;2u = Shift+Enter, ESC[27u = Escape (no modifiers)
 // Modifier is optional - when absent, defaults to 1 (no modifiers)
+// event_type is a colon sub-parameter of the modifier field, present only
+// when the terminal is in "report event types" mode (flag bit 2): 1=press,
+// 2=repeat, 3=release. Absent => press. The codepoint may also carry colon
+// sub-params (alternate/shifted/base layout keys) which we ignore — match
+// and discard them so the trailing `u` still anchors.
 // eslint-disable-next-line no-control-regex
-const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u/
+const CSI_U_RE = /^\x1b\[(\d+)(?::\d+)*(?:;(\d+)(?::(\d+))?)?u/
 
 // xterm modifyOtherKeys: ESC [ 27 ; modifier ; keycode ~
 // Example: ESC[27;2;13~ = Shift+Enter. Emitted by Ghostty/tmux/xterm when
@@ -540,6 +545,12 @@ function keycodeToName(keycode: number): string | undefined {
   }
 }
 
+/** Kitty keyboard protocol event type. Only populated for CSI u key events
+ *  when the terminal reports event types (flag bit 2, "report event types").
+ *  Undefined for legacy keypresses and CSI u events without the sub-param —
+ *  consumers must treat undefined as 'press' (a normal keystroke). */
+export type KeyEventType = 'press' | 'repeat' | 'release'
+
 export type ParsedKey = {
   kind: 'key'
   fn: boolean
@@ -553,6 +564,9 @@ export type ParsedKey = {
   raw: string | undefined
   code?: string
   isPasted: boolean
+  /** press/repeat/release from the Kitty protocol, when reported. Undefined
+   *  means the terminal didn't report an event type — treat as 'press'. */
+  eventType?: KeyEventType
 }
 
 /** A terminal response sequence (DECRPM, DA1, OSC reply, etc.) parsed
@@ -636,6 +650,16 @@ function parseKeypress(s: string = ''): ParsedKey {
     const modifier = match[2] ? parseInt(match[2], 10) : 1
     const mods = decodeModifier(modifier)
     const name = keycodeToName(codepoint)
+    // event_type sub-param: 1=press, 2=repeat, 3=release. Absent => press.
+    // Only emitted when "report event types" (flag bit 2) is active.
+    const eventType: KeyEventType | undefined =
+      match[3] === '3'
+        ? 'release'
+        : match[3] === '2'
+          ? 'repeat'
+          : match[3] === '1'
+            ? 'press'
+            : undefined
     return {
       kind: 'key',
       name,
@@ -648,6 +672,7 @@ function parseKeypress(s: string = ''): ParsedKey {
       sequence: s,
       raw: s,
       isPasted: false,
+      eventType,
     }
   }
 

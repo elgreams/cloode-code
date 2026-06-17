@@ -880,7 +880,7 @@ export default class Ink {
    *
    * Always re-asserts extended key reporting and mouse tracking. Mouse
    * tracking is idempotent (DEC private mode set-when-set is a no-op). The
-   * Kitty keyboard protocol is NOT — CSI >1u is a stack push, so we pop
+   * Kitty keyboard protocol is NOT — CSI >3u is a stack push, so we pop
    * first to keep depth balanced (pop on empty stack is a no-op per spec,
    * so after a terminal reset this still restores depth 0→1). Without the
    * pop, each >5s idle gap adds a stack entry, and the single pop on exit

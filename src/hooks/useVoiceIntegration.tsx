@@ -4,6 +4,8 @@ import { useNotifications } from '../context/notifications.js';
 import { useIsModalOverlayActive } from '../context/overlayContext.js';
 import { useGetVoiceState, useSetVoiceState, useVoiceState } from '../context/voice.js';
 import { KeyboardEvent } from '../ink/events/keyboard-event.js';
+import { useKeyRelease } from '../ink/hooks/use-key-release.js';
+import type { ParsedKey } from '../ink/parse-keypress.js';
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until REPL wires handleKeyDown to <Box onKeyDown>
 import { useInput } from '../ink.js';
 import { useOptionalKeybindingContext } from '../keybindings/KeybindingContext.js';
@@ -65,9 +67,9 @@ function matchesKeyboardEvent(e: KeyboardEvent, target: ParsedKeystroke): boolea
 // lookup returns null — that means the user null-unbound or reassigned
 // space, and falling back to space would pick a dead or conflicting key.
 const DEFAULT_VOICE_KEYSTROKE: ParsedKeystroke = {
-  key: ' ',
+  key: 'z',
   ctrl: false,
-  alt: false,
+  alt: true,
   shift: false,
   meta: false,
   super: false
@@ -101,6 +103,8 @@ type UseVoiceIntegrationResult = {
   // Undo the gap space and reset anchor refs after a failed voice activation.
   resetAnchor: () => void;
   handleKeyEvent: (fallbackMs?: number) => void;
+  // Authoritatively end a key-hold recording on a real key-release event.
+  stopHold: () => void;
   interimRange: InterimRange | null;
 };
 export function useVoiceIntegration({
@@ -320,6 +324,7 @@ export function useVoiceIntegration({
     stripTrailing,
     resetAnchor,
     handleKeyEvent: voice.handleKeyEvent,
+    stopHold: voice.stopHold,
     interimRange
   };
 }
@@ -350,11 +355,13 @@ export function useVoiceIntegration({
  */
 export function useVoiceKeybindingHandler({
   voiceHandleKeyEvent,
+  voiceStopHold,
   stripTrailing,
   resetAnchor,
   isActive
 }: {
   voiceHandleKeyEvent: (fallbackMs?: number) => void;
+  voiceStopHold: () => void;
   stripTrailing: (maxStrip: number, opts?: StripOpts) => number;
   resetAnchor: () => void;
   isActive: boolean;
@@ -620,6 +627,21 @@ export function useVoiceKeybindingHandler({
       });
     }, RAPID_KEY_GAP_MS, resetTimerRef, rapidCountRef, charsInInputRef, setVoiceState);
   };
+
+  // ── Authoritative key-release (Kitty keyboard protocol) ─────────────
+  // When the terminal reports event types, a real release event for the
+  // voice key ends the hold immediately — no repeat-timing guesswork. App
+  // diverts releases onto the 'keyrelease' channel (useKeyRelease). The
+  // press path's REPEAT_FALLBACK_MS timer stays armed as a fallback for
+  // terminals that don't report releases. Bare-char bindings are ignored:
+  // text keys aren't reported as escape codes, so they get no release event.
+  useKeyRelease(
+    (key: ParsedKey) => {
+      if (!voiceEnabled || voiceKeystroke === null || bareChar !== null) return;
+      if (matchesKeyboardEvent(new KeyboardEvent(key), voiceKeystroke)) voiceStopHold();
+    },
+    { isActive }
+  );
 
   // Backward-compat bridge: REPL.tsx doesn't yet wire handleKeyDown to
   // <Box onKeyDown>. Subscribe via useInput and adapt InputEvent →

@@ -294,11 +294,18 @@ export const FOCUS_OUT = csi('O')
 // See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 
 /**
- * Enable Kitty keyboard protocol with basic modifier reporting
- * CSI > 1 u - pushes mode with flags=1 (disambiguate escape codes)
- * This makes Shift+Enter send CSI 13;2 u instead of just CR
+ * Enable Kitty keyboard protocol.
+ * CSI > 3 u - pushes mode with flags = 1 | 2:
+ *   1 = disambiguate escape codes (Shift+Enter → CSI 13;2 u instead of CR)
+ *   2 = report event types (press/repeat/release as a :event_type subparam)
+ * Flag 2 powers hold-to-talk release detection (voice:pushToTalk, a modifier
+ * combo). It only affects keys ALREADY reported as CSI u (modifier combos,
+ * special keys) — plain text keys stay raw bytes because we deliberately do
+ * NOT set flag 8 ("report all keys as escape codes"), which would re-encode
+ * normal typing. Release events are diverted off the input path in App.tsx
+ * (see the 'keyrelease' channel), so flag 2 can't double-fire keystrokes.
  */
-export const ENABLE_KITTY_KEYBOARD = csi('>1u')
+export const ENABLE_KITTY_KEYBOARD = csi('>3u')
 
 /**
  * Disable Kitty keyboard protocol
