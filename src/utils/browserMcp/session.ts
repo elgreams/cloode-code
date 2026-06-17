@@ -476,6 +476,14 @@ export class BrowserSession {
   async evaluate(fn: string): Promise<unknown> {
     const { value, error } = await this.evalRaw(`(${fn})()`)
     if (error) {
+      // A malformed `fn` surfaces as a raw V8 SyntaxError against the wrapped
+      // `(<fn>)()` source, which is cryptic. Reframe it so the caller sees that
+      // the function expression they passed is the problem.
+      if (/SyntaxError/.test(error)) {
+        throw new Error(
+          `browser_evaluate expects a function expression, e.g. () => document.title — got a syntax error: ${error}`,
+        )
+      }
       throw new Error(error)
     }
     return value

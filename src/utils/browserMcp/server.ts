@@ -25,7 +25,7 @@ Core loop:
 
 Prefer snapshots over browser_screenshot for understanding page structure — screenshots are only for judging visual appearance. Other tools: browser_evaluate (run a JS function expression, returns JSON), browser_console_messages, browser_network_requests, browser_wait (let content settle), and browser_tabs (list/new/select/close).
 
-There is no auto-waiting: if content has not loaded, browser_wait then re-snapshot. If a tool fails 2-3 times or the page stops responding, stop and ask the user instead of looping.`
+browser_click and browser_type auto-wait for their target element to become actionable, but page-level content is not waited for: if content has not loaded after navigating, browser_wait then re-snapshot. If a tool fails 2-3 times or the page stops responding, stop and ask the user instead of looping.`
 
 /**
  * Subprocess entrypoint for `--browser-mcp`. A self-contained MCP server that
