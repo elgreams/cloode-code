@@ -297,7 +297,7 @@ export function CompanionSprite(): React.ReactNode {
     const quip = reaction && reaction.length > NARROW_QUIP_CAP ? reaction.slice(0, NARROW_QUIP_CAP - 1) + '…' : reaction;
     const label = quip ? `"${quip}"` : focused ? ` ${companion.name} ` : companion.name;
     const face = renderFace(companion);
-    const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (face.length + 20);
+    const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (stringWidth(face) + 20);
     return <Box ref={shimmerRef} paddingX={1} alignSelf="flex-end">
         <Text>
           {petting && <Text color="autoAccept">{figures.heart} </Text>}
@@ -327,7 +327,7 @@ export function CompanionSprite(): React.ReactNode {
   const body = renderSprite(companion, spriteFrame).map(line => blink ? line.replaceAll(companion.eye, '-') : line);
   const sprite = heartFrame ? [heartFrame, ...body] : body;
 
-  const spriteLineWidth = Math.max(...sprite.map(line => line.length));
+  const spriteLineWidth = Math.max(...sprite.map(line => stringWidth(line)));
   const glimmerIndex = -10 + Math.floor(shimmerTime / 50) % (spriteLineWidth + 20);
   const spriteLines = sprite.map((line, i) => {
     if (i === 0 && heartFrame) {
