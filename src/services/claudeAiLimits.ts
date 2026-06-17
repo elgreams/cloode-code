@@ -162,7 +162,12 @@ export function getRawUtilization(): RawUtilization {
 }
 
 function extractRawUtilization(headers: globalThis.Headers): RawUtilization {
-  const result: RawUtilization = {}
+  // Start from the last-known windows so a response that omits the unified
+  // ratelimit headers (e.g. quota pre-checks, some endpoints) doesn't blank
+  // the footer — only windows actually present in these headers are updated.
+  // Intentional full clears (resetLimitSignal, non-subscriber) set
+  // rawUtilization = {} directly and bypass this merge.
+  const result: RawUtilization = { ...rawUtilization }
   for (const [key, abbrev] of [
     ['five_hour', '5h'],
     ['seven_day', '7d'],
