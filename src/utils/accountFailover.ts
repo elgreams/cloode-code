@@ -32,6 +32,12 @@ import { getGlobalConfig } from './config.js'
 
 const DEFAULT_THRESHOLD = 0.95
 
+// Fallback "exhausted until" horizon for a hard rejection that carried no reset
+// timestamp. Long enough that failover rotates off the rejecting account, short
+// enough that the account becomes a candidate again soon if every account is in
+// the same state. A real reset from response headers supersedes it.
+const REJECTION_BACKOFF_SECONDS = 60
+
 function failoverEnabled(): boolean {
   return getGlobalConfig().autoAccountFailover === true
 }
@@ -63,7 +69,17 @@ export function exhaustionReset(
     // Prefer the representative reset; fall back to the soonest window reset.
     const windowResets = [raw.five_hour?.resets_at, raw.seven_day?.resets_at]
       .filter((n): n is number => typeof n === 'number')
-    return limits.resetsAt ?? (windowResets.length ? Math.min(...windowResets) : null)
+    // A hard rejection ALWAYS exhausts the account, even when the error carried
+    // no reset timestamp (a bare 429 with no unified ratelimit headers). Falling
+    // back to null here would read as "account is fine" and suppress failover on
+    // a real rejection. Use a short backoff sentinel so the turn-boundary switch
+    // still rotates; a real reset overwrites it on the next response with headers.
+    return (
+      limits.resetsAt ??
+      (windowResets.length
+        ? Math.min(...windowResets)
+        : Date.now() / 1000 + REJECTION_BACKOFF_SECONDS)
+    )
   }
 
   let latest: number | null = null
@@ -126,6 +142,12 @@ export function maybeFailoverBetweenTurns(): FailoverResult | null {
   const activeId = getActiveAccountId()
   const active = accounts.find(a => a.id === activeId)
   const now = Date.now() / 1000
+
+  // If the live slot isn't one of our saved accounts (e.g. the user /login'd to
+  // an unmanaged account, so the pointer was cleared), the live exhaustion
+  // signal can't be attributed to a managed identity. Don't rotate off it onto a
+  // saved account the user never asked to switch to.
+  if (!active) return null
 
   // Is the active account exhausted right now? Prefer the live signal; fall
   // back to a still-valid stamp (e.g. the feature was just toggled on, or the

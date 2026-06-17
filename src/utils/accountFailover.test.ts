@@ -48,6 +48,23 @@ test('a healthy (allowed) signal yields a null reset (drives stamp clear)', () =
   ).toBeNull()
 })
 
+// Regression: a hard rejection with NO reset timestamp (bare 429, no unified
+// ratelimit headers) must still read as exhausted so failover rotates off the
+// account. Previously this returned null ("account is fine") and suppressed
+// failover on a real rejection. exhaustionReset now falls back to a short
+// backoff sentinel in the future.
+test('a rejected signal with no reset still reads as exhausted', () => {
+  resetLimitSignal()
+  emitStatusChange({
+    status: 'rejected',
+    unifiedRateLimitFallbackAvailable: false,
+    isUsingOverage: false,
+  })
+  const reset = exhaustionReset(currentLimits, getRawUtilization(), THRESHOLD)
+  expect(reset).not.toBeNull()
+  expect(reset!).toBeGreaterThan(Date.now() / 1000)
+})
+
 test('resetLimitSignal clears the signal so it no longer reads exhausted', () => {
   emitStatusChange({
     status: 'rejected',

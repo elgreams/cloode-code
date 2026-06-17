@@ -153,9 +153,9 @@ export function syncSavedAccountByRefreshToken(
     subscriptionType?: string | null
     rateLimitTier?: string | null
   },
-): void {
+): boolean {
   const accounts = getGlobalConfig().savedAnthropicAccounts ?? []
-  if (!accounts.some(a => a.tokens.refreshToken === oldRefreshToken)) return
+  if (!accounts.some(a => a.tokens.refreshToken === oldRefreshToken)) return false
 
   saveGlobalConfig(c => ({
     ...c,
@@ -177,6 +177,7 @@ export function syncSavedAccountByRefreshToken(
         : a,
     ),
   }))
+  return true
 }
 
 /**
@@ -227,6 +228,38 @@ export function syncSavedAccountByUuid(
           }
         : a,
     ),
+  }))
+}
+
+/**
+ * Keep `activeAnthropicAccountId` in agreement with whatever identity is now in
+ * the live `claudeAiOauth` slot. Called after a /login so the pointer can never
+ * disagree with the live token.
+ *
+ * The pointer is otherwise only written by save/switch/remove, so a /login to an
+ * account that isn't the currently-active saved one leaves it stale — pointing
+ * at a DIFFERENT saved account than the one actually making requests. Code that
+ * keys off the pointer (the 401 saved-snapshot fallback, failover between turns,
+ * the `/account list` marker, the usage footer) then acts on the wrong identity:
+ * a 401 or usage limit on the just-logged-in account can silently switch the
+ * user to an unrelated saved account.
+ *
+ * Resolution: if a saved snapshot owns `liveUuid`, point at it; otherwise the
+ * live account is unmanaged, so clear the pointer to `undefined` rather than
+ * leave it on a stale account. No-op if already correct.
+ */
+export function reconcileActiveAccountWithLiveSlot(
+  liveUuid: string | undefined,
+): void {
+  const accounts = getGlobalConfig().savedAnthropicAccounts ?? []
+  const match = liveUuid
+    ? accounts.find(a => a.account?.accountUuid === liveUuid)
+    : undefined
+  const nextActiveId = match?.id
+  if (getGlobalConfig().activeAnthropicAccountId === nextActiveId) return
+  saveGlobalConfig(cfg => ({
+    ...cfg,
+    activeAnthropicAccountId: nextActiveId,
   }))
 }
 

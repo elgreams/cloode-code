@@ -167,7 +167,24 @@ function extractRawUtilization(headers: globalThis.Headers): RawUtilization {
   // the footer — only windows actually present in these headers are updated.
   // Intentional full clears (resetLimitSignal, non-subscriber) set
   // rawUtilization = {} directly and bypass this merge.
-  const result: RawUtilization = { ...rawUtilization }
+  //
+  // But only carry forward windows whose reset is still in the future. A window
+  // last seen at/above the exhaustion threshold, then omitted from every
+  // subsequent response, would otherwise persist its high utilization forever —
+  // failover (exhaustionReset) keeps treating the account as exhausted and the
+  // self-heal listener never sees a sub-threshold reading to clear the stamp. A
+  // window whose resets_at has passed has, by definition, rolled over; drop it so
+  // a fresh header (or its absence) can't keep a dead reading alive.
+  const nowSeconds = Date.now() / 1000
+  const result: RawUtilization = {}
+  for (const [key, win] of Object.entries(rawUtilization) as [
+    keyof RawUtilization,
+    RawWindowUtilization | undefined,
+  ][]) {
+    if (win && win.resets_at > nowSeconds) {
+      result[key] = win
+    }
+  }
   for (const [key, abbrev] of [
     ['five_hour', '5h'],
     ['seven_day', '7d'],

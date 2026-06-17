@@ -97,11 +97,10 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   // any long-running instance. Key by accountUuid (the new login's identity);
   // no-op if this account was never saved. Guarded so it can't break login.
   const loginUuid = profile?.account.uuid ?? tokens.tokenAccount?.uuid
-  if (loginUuid && tokens.refreshToken && tokens.expiresAt) {
-    try {
-      const { syncSavedAccountByUuid } = await import(
-        '../../utils/accountSwitch.js'
-      )
+  try {
+    const { syncSavedAccountByUuid, reconcileActiveAccountWithLiveSlot } =
+      await import('../../utils/accountSwitch.js')
+    if (loginUuid && tokens.refreshToken && tokens.expiresAt) {
       syncSavedAccountByUuid(loginUuid, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -110,9 +109,14 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
         subscriptionType: tokens.subscriptionType,
         rateLimitTier: tokens.rateLimitTier,
       })
-    } catch (syncError) {
-      logForDebugging(String(syncError), { level: 'error' })
     }
+    // Keep the active-account pointer in agreement with the live slot we just
+    // wrote. Without this, a /login to an account that isn't the currently-active
+    // saved one leaves the pointer on a DIFFERENT saved account, and the 401
+    // fallback / failover / footer all act on the wrong identity.
+    reconcileActiveAccountWithLiveSlot(loginUuid)
+  } catch (syncError) {
+    logForDebugging(String(syncError), { level: 'error' })
   }
 
   if (storageResult.warning) {

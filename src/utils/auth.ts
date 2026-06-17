@@ -1627,10 +1627,23 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     // different account and cross-contaminate snapshots. Guarded so it can
     // never break refresh.
     try {
-      const { syncSavedAccountByRefreshToken } = await import(
-        './accountSwitch.js'
+      const { syncSavedAccountByRefreshToken, syncSavedAccountByUuid } =
+        await import('./accountSwitch.js')
+      const matched = syncSavedAccountByRefreshToken(
+        lockedTokens.refreshToken,
+        refreshedTokens,
       )
-      syncSavedAccountByRefreshToken(lockedTokens.refreshToken, refreshedTokens)
+      // If no snapshot owned the rotated refresh token, the account may have
+      // been switched-to (switchToAccount writes the live slot but doesn't
+      // re-stamp the snapshot) and then refreshed through a path that rotated
+      // its token without us matching it — leaving the snapshot holding a now-
+      // dead refresh token, so a later `/account use` replays a revoked token.
+      // Fall back to keying by the live identity (oauthAccount uuid), which
+      // during a refresh is the account being refreshed.
+      if (!matched) {
+        const liveUuid = getGlobalConfig().oauthAccount?.accountUuid
+        if (liveUuid) syncSavedAccountByUuid(liveUuid, refreshedTokens)
+      }
     } catch (syncError) {
       logError(syncError)
     }
