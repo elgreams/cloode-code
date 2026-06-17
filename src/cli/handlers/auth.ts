@@ -90,6 +90,31 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   const storageResult = saveOAuthTokensIfNeeded(tokens)
   clearOAuthTokenCache()
 
+  // If the user just re-logged into an account they'd previously saved, refresh
+  // that snapshot's token block. saveOAuthTokensIfNeeded only writes the live
+  // slot — without this, the saved snapshot keeps the old, now-revoked token,
+  // and a later `/account use` replays it, producing a persistent 401 loop in
+  // any long-running instance. Key by accountUuid (the new login's identity);
+  // no-op if this account was never saved. Guarded so it can't break login.
+  const loginUuid = profile?.account.uuid ?? tokens.tokenAccount?.uuid
+  if (loginUuid && tokens.refreshToken && tokens.expiresAt) {
+    try {
+      const { syncSavedAccountByUuid } = await import(
+        '../../utils/accountSwitch.js'
+      )
+      syncSavedAccountByUuid(loginUuid, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        scopes: tokens.scopes,
+        subscriptionType: tokens.subscriptionType,
+        rateLimitTier: tokens.rateLimitTier,
+      })
+    } catch (syncError) {
+      logForDebugging(String(syncError), { level: 'error' })
+    }
+  }
+
   if (storageResult.warning) {
     logEvent('tengu_oauth_storage_warning', {
       warning:

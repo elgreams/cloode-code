@@ -180,6 +180,57 @@ export function syncSavedAccountByRefreshToken(
 }
 
 /**
+ * Keep a saved snapshot current across a /login re-auth (not a refresh).
+ *
+ * The refresh path keys by the rotated refresh token, but a /login mints a
+ * brand-new token pair with no link to the old one — so we key by account
+ * identity (accountUuid) instead. installOAuthTokens calls storeOAuthAccountInfo
+ * for the freshly-authenticated account BEFORE saving tokens, so `accountUuid`
+ * here is the new login's identity. If a saved snapshot already owns that uuid
+ * (i.e. the user re-logged into an account they'd saved), refresh its token
+ * block so a later `/account use` replays the new credentials, not the stale,
+ * now-revoked ones. No-op if no snapshot owns that uuid (a genuinely new account
+ * is handled by saveCurrentAccount instead). Matching by uuid — not the active
+ * pointer or email — avoids the cross-contamination that misattributes during a
+ * /login to a different account.
+ */
+export function syncSavedAccountByUuid(
+  accountUuid: string,
+  tokens: {
+    accessToken: string
+    refreshToken: string
+    expiresAt: number
+    scopes?: string[]
+    subscriptionType?: string | null
+    rateLimitTier?: string | null
+  },
+): void {
+  const accounts = getGlobalConfig().savedAnthropicAccounts ?? []
+  if (!accounts.some(a => a.account?.accountUuid === accountUuid)) return
+
+  saveGlobalConfig(c => ({
+    ...c,
+    savedAnthropicAccounts: (c.savedAnthropicAccounts ?? []).map(a =>
+      a.account?.accountUuid === accountUuid
+        ? {
+            ...a,
+            tokens: {
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+              expiresAt: tokens.expiresAt,
+              scopes: tokens.scopes ?? a.tokens.scopes,
+              subscriptionType:
+                tokens.subscriptionType ?? a.tokens.subscriptionType ?? null,
+              rateLimitTier:
+                tokens.rateLimitTier ?? a.tokens.rateLimitTier ?? null,
+            },
+          }
+        : a,
+    ),
+  }))
+}
+
+/**
  * Record (or clear) a saved account's usage-limit reset time. Centralised here
  * so all savedAnthropicAccounts mutations live in one module. No-op if the
  * value is unchanged, so callers on a hot path can call freely without churning

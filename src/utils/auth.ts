@@ -1444,8 +1444,35 @@ async function handleOAuth401ErrorImpl(
     return true
   }
 
-  // Same token that failed - force refresh, bypassing local expiration check
-  return checkAndRefreshOAuthTokenIfNeeded(0, true)
+  // Same token that failed - force refresh, bypassing local expiration check.
+  if (await checkAndRefreshOAuthTokenIfNeeded(0, true)) return true
+
+  // Force refresh failed — the live slot's refresh token is likely rotated or
+  // revoked (e.g. another instance re-logged this account, or the disk slot
+  // holds stale credentials). As a last resort, fall back to the active saved
+  // snapshot: if it carries a DIFFERENT, non-expired token, promote it into the
+  // live slot. With the /login snapshot-sync above, that snapshot now tracks the
+  // newest credentials, so this recovers a long-running instance that's looping
+  // on a dead token instead of forcing the user to restart. Guarded so it can
+  // never throw out of the 401 path.
+  try {
+    const { getActiveAccountId, listSavedAccounts, switchToAccount } =
+      await import('./accountSwitch.js')
+    const activeId = getActiveAccountId()
+    const snapshot = listSavedAccounts().find(a => a.id === activeId)
+    if (
+      snapshot &&
+      snapshot.tokens.accessToken !== failedAccessToken &&
+      !isOAuthTokenExpired(snapshot.tokens.expiresAt) &&
+      switchToAccount(snapshot.id)
+    ) {
+      logEvent('tengu_oauth_401_recovered_from_saved_account', {})
+      return true
+    }
+  } catch (fallbackError) {
+    logError(fallbackError)
+  }
+  return false
 }
 
 /**
