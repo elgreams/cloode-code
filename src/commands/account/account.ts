@@ -1,3 +1,4 @@
+import { checkQuotaStatus } from '../../services/claudeAiLimits.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import {
   getActiveAccountId,
@@ -132,6 +133,13 @@ export const call: LocalCommandCall = async args => {
         // out and refuse to fail over to it. Goes through the app's own write
         // path so it sticks, unlike editing ~/.claude.json while we're running.
         setAccountExhausted(account.id, undefined)
+        // switchToAccount() → resetLimitSignal() wipes rawUtilization, so the
+        // footer's 5h/7d usage parts disappear until the next real turn
+        // repopulates them from response headers. Fire a quota check now (it
+        // reads the freshly-swapped live token) so the new account's usage
+        // refills within a second or two instead of going blank until the user
+        // sends a message. Fire-and-forget; the footer updates when it emits.
+        void checkQuotaStatus().catch(() => {})
       }
       return {
         type: 'text',
