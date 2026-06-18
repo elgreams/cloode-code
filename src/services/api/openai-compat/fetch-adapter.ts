@@ -1,5 +1,6 @@
 import { logForDebugging } from '../../../utils/debug.js'
 import { recordUnsupportedOpenAICompatModel } from './discovery.js'
+import { recordToolIncapableModel } from './tool-capability.js'
 
 // Custom `fetch` that makes a standard OpenAI `/v1/chat/completions` endpoint
 // (NIM, OpenRouter, vLLM, Ollama, …) look like the Anthropic Messages API to the
@@ -546,7 +547,23 @@ export function createOpenAICompatFetch(opts: {
       )
       // Self-heal: if the backend rejects the model, remember it so /model stops
       // offering it (mirrors recordUnsupportedCodexModel).
+      // A request that carried tools and was rejected specifically *because* of
+      // tools (NIM embedding/vision/guard models error on chat+tools) means the
+      // model can chat but not use tools — flag it tool-incapable and warn once,
+      // but DON'T hide it from /model (it still works for plain chat). Checked
+      // before the model-not-found net below so a tools-phrased error isn't
+      // misread as the whole model being gone.
+      const sentTools =
+        Array.isArray(body.tools) && (body.tools as unknown[]).length > 0
       if (
+        sentTools &&
+        /\btool|\bfunction(?:s|_call|-call|ing| call)?\b/i.test(errText) &&
+        /not support|unsupported|not allow|cannot|can't|invalid|no such|don'?t support|isn'?t support|not enabled|not available/i.test(
+          errText,
+        )
+      ) {
+        recordToolIncapableModel(String(body.model), 'rejected')
+      } else if (
         res.status === 404 ||
         /not found|does not exist|no such model|unsupported|invalid model|unknown model/i.test(
           errText,

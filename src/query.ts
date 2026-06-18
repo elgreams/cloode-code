@@ -102,6 +102,7 @@ import { handleStopHooks } from './query/stopHooks.js'
 import { buildQueryConfig } from './query/config.js'
 import { getGlobalConfig } from './utils/config.js'
 import { isOpenAICompatModel } from './services/api/openai-compat/registry.js'
+import { recordToolIncapableModel } from './services/api/openai-compat/tool-capability.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
 import { feature } from 'bun:bundle'
@@ -1521,6 +1522,27 @@ ${internalContinuationInstruction}`,
           transition: { reason: 'openai_compat_empty_turn_nudge' },
         }
         continue
+      }
+
+      // Silent-ignore detection (Layer 3): we get here while still in a stall
+      // (text promised a tool but none came, or an empty/thinking-only turn) yet
+      // the nudge budget is spent — i.e. we explicitly asked this model to emit
+      // the one tool call MAX_EMPTY_TURN_NUDGES times and it never did. For an
+      // openai-compat model that's strong evidence it accepts tools but can't
+      // actually use them (NIM small/old chat models, tool-less Ollama). Flag it
+      // once so the user gets a clear "this model ignores tools" warning instead
+      // of a silently stalled agent. Gated on the budget being exhausted so a
+      // model that's merely slow to act (and recovers after a nudge) is never
+      // mislabeled.
+      if (
+        (shouldNudgeText || shouldNudgeEmpty) &&
+        emptyTurnNudges >= MAX_EMPTY_TURN_NUDGES &&
+        isOpenAICompatModel(toolUseContext.options.mainLoopModel)
+      ) {
+        recordToolIncapableModel(
+          String(toolUseContext.options.mainLoopModel),
+          'ignored',
+        )
       }
 
       return { reason: 'completed' }

@@ -321,6 +321,19 @@ export type GlobalConfig = {
   // of hiding a valid model forever. Legacy `string[]` config is tolerated on
   // read and treated as already-expired so it clears on upgrade.
   openAICompatUnsupportedModels?: Array<{ id: string; ts: number }>
+  // Model ids that accept chat requests but can't actually use tools — either
+  // the backend rejected the `tools` field (NIM embedding/vision models), or the
+  // model repeatedly ignored tools and answered in plain text (NIM small/old
+  // chat models, tool-less Ollama models). Used to warn the user ONCE per model
+  // that tool-calling won't work. Timestamped so the warning can resurface after
+  // the TTL (the model may have been swapped behind the same id). `reason` tunes
+  // the wording. Unlike openAICompatUnsupportedModels these are NOT hidden from
+  // /model — the model still works for plain chat, just not for agentic tools.
+  openAICompatToolIncapableModels?: Array<{
+    id: string
+    ts: number
+    reason?: 'rejected' | 'ignored' | 'capabilities'
+  }>
 
   // Per-provider models discovered from each backend's /v1/models endpoint,
   // keyed by provider name. Background-refreshed; merged with the seed for /model.
